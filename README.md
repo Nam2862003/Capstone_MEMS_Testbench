@@ -1,0 +1,1 @@
+This project aims to create firmware (embedded system) for MEMS TestBench AFM by utilizing the STM32Cube (Extension) + Python GUI in VS Code to make optimal performance for Nucleo G474RE, below is step by step for the initial setup
