@@ -1,0 +1,32 @@
+# ===== Build Folders =====
+build/
+Debug/
+Release/
+
+# ===== STM32 Generated Files =====
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.d
+*.o
+*.su
+
+# ===== CubeMX Generated Files (if needed) =====
+*.mxproject
+.mxproject
+mx.scratch
+
+# ===== IDE Files =====
+.settings/
+.cproject
+.project
+*.launch
+
+# ===== System Files =====
+.DS_Store
+Thumbs.db
+
+# ===== Keep settings folder if you really want =====
+!.settings/
