@@ -475,7 +475,8 @@ void process_adc_data(uint32_t* data, uint32_t length)
         uint16_t mems      = data[i] & 0xFFFF;
         uint16_t reference = data[i] >> 16;
 
-        // later you will do
+        printf("MEMS: %u  REF: %u\n", mems, reference);
+        // later we will do
         // phase detection
         // amplitude measurement
     }
