@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include "stm32g4xx_hal.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -50,7 +50,8 @@ DMA_HandleTypeDef hdma_adc1;
 TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN PV */
-
+#define ADC_BUFFER_SIZE 4096
+uint32_t adc_buffer[ADC_BUFFER_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,7 +104,15 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
+  HAL_ADC_Start(&hadc2);   // start slave ADC first
 
+  HAL_ADCEx_MultiModeStart_DMA(
+      &hadc1,
+      (uint32_t*)adc_buffer,
+      ADC_BUFFER_SIZE
+  ); // start master ADC with DMA, this will also trigger the slave ADC conversions
+
+  HAL_TIM_Base_Start(&htim6); // start timer, this will trigger the ADC conversions via the timer TRGO
   /* USER CODE END 2 */
 
   /* Initialize led */
@@ -223,7 +232,7 @@ static void MX_ADC1_Init(void)
   /** Common config
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.GainCompensation = 0;
@@ -292,7 +301,7 @@ static void MX_ADC2_Init(void)
   /** Common config
   */
   hadc2.Instance = ADC2;
-  hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc2.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
   hadc2.Init.Resolution = ADC_RESOLUTION_12B;
   hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc2.Init.GainCompensation = 0;
@@ -348,7 +357,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 169;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 0;
+  htim6.Init.Period = 99;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -418,6 +427,36 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void process_adc_data(uint32_t* data, uint32_t length)
+{
+    for(uint32_t i=0;i<5;i++)
+    {
+        uint16_t mems      = data[i] & 0xFFFF;
+        uint16_t reference = data[i] >> 16;
+
+        // printf("MEMS:%u REF:%u\r\n", mems, reference);
+        // later we will do
+        // phase detection
+        // amplitude measurement
+    }
+}
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if(hadc->Instance == ADC1)
+    {
+        // Process first half of buffer
+        process_adc_data(&adc_buffer[0], ADC_BUFFER_SIZE/2);
+    }
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if(hadc->Instance == ADC1)
+    {
+        // Process second half of buffer
+        process_adc_data(&adc_buffer[ADC_BUFFER_SIZE/2], ADC_BUFFER_SIZE/2);
+    }
+}
 /* USER CODE END 4 */
 
 /**
