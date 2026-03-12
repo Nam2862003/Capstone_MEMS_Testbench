@@ -62,7 +62,7 @@ static void MX_TIM6_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 /* USER CODE BEGIN PFP */
-
+void FT232_WriteByte(uint8_t data);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -146,7 +146,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+    // FIFO testing code, should be removed in final version
+    // static uint8_t counter = 0;
+    // FT232_WriteByte(counter++);
+    // HAL_Delay(1);
     /* -- Sample board code for User push-button in interrupt mode ---- */
     if (BspButtonState == BUTTON_PRESSED)
     {
@@ -411,7 +414,26 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10|GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
+                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7
+                          |GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_11, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PC0 PC1 PC2 PC3
+                           PC4 PC5 PC6 PC7
+                           PC8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
+                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7
+                          |GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PC10 PC11 */
   GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11;
@@ -426,15 +448,31 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void FT232_WriteByte(uint8_t data)
+{
+    // Wait until FIFO ready
+    while(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_SET);
 
+    // Write data to PC0–PC7
+    GPIOC->ODR = (GPIOC->ODR & 0xFF00) | data;
+
+    // Toggle WR
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+}
 void process_adc_data(uint32_t* data, uint32_t length)
 {
-    for(uint32_t i=0;i<5;i++)
+    for(uint32_t i=0;i<length;i++)
     {
         uint16_t mems      = data[i] & 0xFFFF;
         uint16_t reference = data[i] >> 16;
 
-        // printf("MEMS:%u REF:%u\r\n", mems, reference);
+        FT232_WriteByte(mems & 0xFF);
+        FT232_WriteByte(mems >> 8);
+
+        FT232_WriteByte(reference & 0xFF);
+        FT232_WriteByte(reference >> 8);
+        // printf("MEMS:%u REF:%u\r\n", mems, reference); // for debugging purposes, SHOULD BE REMOVED IN FINAL VERSION as it can significantly slow down the processing, especially if the COM port is not fast enough
         // later we will do
         // phase detection
         // amplitude measurement
