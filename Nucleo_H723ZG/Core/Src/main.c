@@ -18,8 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "lwip.h"
 #include "stm32h7xx_hal.h"
-#include "stm32h7xx_hal_adc.h"
+#include "lwip/udp.h"
+#include "lwip/pbuf.h"
+#include "string.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -70,7 +73,8 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+struct udp_pcb *upcb;
+ip_addr_t dest_ip;
 /* USER CODE END 0 */
 
 /**
@@ -112,6 +116,7 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_TIM6_Init();
+  MX_LWIP_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc2);   // start slave ADC first
 
@@ -122,6 +127,18 @@ int main(void)
   ); // start master ADC with DMA, this will also trigger the slave ADC conversions
 
   HAL_TIM_Base_Start(&htim6); // start timer, this will trigger the ADC conversions via the timer TRGO
+
+  // Initialize UDP connection
+  IP4_ADDR(&dest_ip, 192,168,1,141);   // your PC IP
+  upcb = udp_new();
+  if(upcb != NULL)
+  {
+      udp_connect(upcb, &dest_ip, 5005);
+  }
+  else
+  {
+      Error_Handler();
+  }
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -159,7 +176,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+    MX_LWIP_Process();
     /* -- Sample board code for User push-button in interrupt mode ---- */
     if (BspButtonState == BUTTON_PRESSED)
     {
@@ -461,6 +478,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -468,25 +486,33 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void process_adc_data(uint32_t* data, uint32_t length)
+void send_adc_data(uint32_t* data, uint32_t length)
 {
-    for(uint32_t i=0;i<length;i++)
-    {
-        uint16_t mems      = data[i] & 0xFFFF;
-        uint16_t reference = data[i] >> 16;
+    struct pbuf *p;
 
-        printf("MEMS: %u  REF: %u\n", mems, reference);
-        // later we will do
-        // phase detection
-        // amplitude measurement
+    p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_POOL);
+
+    if(p != NULL)
+    {
+        memcpy(p->payload, data, length * sizeof(uint32_t));
+        udp_send(upcb, p);
+        pbuf_free(p);
+    }
+    if(p != NULL && upcb != NULL)
+    {
+        memcpy(p->payload, data, length * sizeof(uint32_t));
+        udp_send(upcb, p);
+        pbuf_free(p);
     }
 }
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if(hadc->Instance == ADC1)
     {
-        // Process first half of buffer
-        process_adc_data(&adc_buffer[0], ADC_BUFFER_SIZE/2);
+        for(uint32_t i=0;i<ADC_BUFFER_SIZE/2;i+=256)
+        {
+            send_adc_data(&adc_buffer[i],256);
+        }
     }
 }
 
@@ -494,8 +520,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if(hadc->Instance == ADC1)
     {
-        // Process second half of buffer
-        process_adc_data(&adc_buffer[ADC_BUFFER_SIZE/2], ADC_BUFFER_SIZE/2);
+        for(uint32_t i=ADC_BUFFER_SIZE/2;i<ADC_BUFFER_SIZE;i+=256)
+        {
+            send_adc_data(&adc_buffer[i],256);
+        }
     }
 }
 /* USER CODE END 4 */
