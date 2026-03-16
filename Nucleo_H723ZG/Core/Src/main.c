@@ -491,13 +491,6 @@ void send_adc_data(uint32_t* data, uint32_t length)
     struct pbuf *p;
 
     p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_POOL);
-
-    if(p != NULL)
-    {
-        memcpy(p->payload, data, length * sizeof(uint32_t));
-        udp_send(upcb, p);
-        pbuf_free(p);
-    }
     if(p != NULL && upcb != NULL)
     {
         memcpy(p->payload, data, length * sizeof(uint32_t));
