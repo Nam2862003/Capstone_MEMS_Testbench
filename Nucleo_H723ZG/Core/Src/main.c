@@ -23,6 +23,7 @@
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
 #include "string.h"
+#include <stdint.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -54,8 +55,10 @@ DMA_HandleTypeDef hdma_adc1;
 TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN PV */
-#define ADC_BUFFER_SIZE 4096
-uint32_t adc_buffer[ADC_BUFFER_SIZE];
+#define Max_ADC_BUFFER_SIZE 16384 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
+volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
+volatile uint8_t acquisition_running = 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,12 +71,26 @@ static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
+/* USER CODE BEGIN PFP */
+void udp_receive_callback(void *arg,
+                          struct udp_pcb *pcb,
+                          struct pbuf *p,
+                          const ip_addr_t *addr,
+                          u16_t port);
 
+void parse_command(char *cmd);
+
+void update_buffer_size(uint32_t new_size);
+
+void stop_acquisition(void);
+void start_acquisition(void);
+/* USER CODE END PFP */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 struct udp_pcb *upcb;
+struct udp_pcb *rx_pcb;
 ip_addr_t dest_ip;
 /* USER CODE END 0 */
 
@@ -123,7 +140,7 @@ int main(void)
   HAL_ADCEx_MultiModeStart_DMA(
       &hadc1,
       (uint32_t*)adc_buffer,
-      ADC_BUFFER_SIZE
+      active_buffer_size
   ); // start master ADC with DMA, this will also trigger the slave ADC conversions
 
   HAL_TIM_Base_Start(&htim6); // start timer, this will trigger the ADC conversions via the timer TRGO
@@ -134,6 +151,16 @@ int main(void)
   if(upcb != NULL)
   {
       udp_connect(upcb, &dest_ip, 5005);
+  }
+  else
+  {
+      Error_Handler();
+  }
+  rx_pcb = udp_new();
+  if(rx_pcb != NULL)
+  {
+      udp_bind(rx_pcb, IP_ADDR_ANY, 5006);
+      udp_recv(rx_pcb, udp_receive_callback, NULL);
   }
   else
   {
@@ -486,6 +513,78 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void stop_acquisition(void)
+{
+    acquisition_running = 0;
+
+    HAL_TIM_Base_Stop(&htim6);
+    HAL_ADC_Stop_DMA(&hadc1);
+}
+
+void start_acquisition(void)
+{
+    HAL_ADCEx_MultiModeStart_DMA(
+        &hadc1,
+        (uint32_t*)adc_buffer,
+        active_buffer_size
+    );
+
+    HAL_TIM_Base_Start(&htim6);
+
+    acquisition_running = 1;
+}
+void update_buffer_size(uint32_t new_size)
+{
+    if(new_size < 512 || new_size > Max_ADC_BUFFER_SIZE)
+        return;
+
+    if(acquisition_running)
+        stop_acquisition();
+
+    active_buffer_size = new_size;
+
+    start_acquisition();
+}
+void udp_receive_callback(void *arg,
+                          struct udp_pcb *pcb,
+                          struct pbuf *p,
+                          const ip_addr_t *addr,
+                          u16_t port)
+{
+    if(p != NULL)
+    {
+        char buffer[64];
+
+        uint16_t len = (p->len < 63) ? p->len : 63;
+        memcpy(buffer,p->payload,len);
+        buffer[len] = '\0';
+
+        parse_command(buffer);
+
+        pbuf_free(p);
+    }
+}
+void parse_command(char *cmd)
+{
+    if(strncmp(cmd,"BUF",3)==0)
+    {
+        uint32_t size;
+
+        sscanf(cmd,"BUF,%lu",&size);
+
+        update_buffer_size(size);
+    }
+    else if(strncmp(cmd,"START",5)==0)
+    {
+        if(!acquisition_running)
+            start_acquisition();
+    }
+    else if(strncmp(cmd,"STOP",4)==0)
+    {
+        if(acquisition_running)
+            stop_acquisition();
+    }
+}
 void send_adc_data(uint32_t* data, uint32_t length)
 {
     struct pbuf *p;
@@ -502,7 +601,7 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if(hadc->Instance == ADC1)
     {
-        for(uint32_t i=0;i<ADC_BUFFER_SIZE/2;i+=256)
+        for(uint32_t i=0;i<active_buffer_size/2;i+=256)
         {
             send_adc_data(&adc_buffer[i],256);
         }
@@ -513,12 +612,13 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if(hadc->Instance == ADC1)
     {
-        for(uint32_t i=ADC_BUFFER_SIZE/2;i<ADC_BUFFER_SIZE;i+=256)
+        for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=256)
         {
             send_adc_data(&adc_buffer[i],256);
         }
     }
 }
+
 /* USER CODE END 4 */
 
  /* MPU Configuration */

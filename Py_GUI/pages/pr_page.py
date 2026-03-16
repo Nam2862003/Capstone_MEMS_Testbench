@@ -1,43 +1,18 @@
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QTabWidget,
-    QLabel, QPushButton, QComboBox
-)
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from pages.base_functions import BaseDAQPage
 
 
-class PRPage(QWidget):
+class PRPage(BaseDAQPage):
 
     def __init__(self):
 
         super().__init__()
 
+        self.calibration = QWidget()
+
         layout = QVBoxLayout()
+        layout.addWidget(QLabel("Calibration Tools"))
 
-        tabs = QTabWidget()
+        self.calibration.setLayout(layout)
 
-        setup = QWidget()
-        calibration = QWidget()
-        acquisition = QWidget()
-
-        tabs.addTab(setup, "Setup")
-        tabs.addTab(calibration, "Calibration")
-        tabs.addTab(acquisition, "Acquisition")
-
-        layout.addWidget(tabs)
-
-        self.setLayout(layout)
-
-        # Setup tab
-        setup_layout = QVBoxLayout()
-
-        rate = QComboBox()
-        rate.addItems(["100 kSPS", "500 kSPS", "1 MSPS", "2 MSPS"])
-
-        start = QPushButton("Start")
-        stop = QPushButton("Stop")
-
-        setup_layout.addWidget(QLabel("Sampling Rate"))
-        setup_layout.addWidget(rate)
-        setup_layout.addWidget(start)
-        setup_layout.addWidget(stop)
-
-        setup.setLayout(setup_layout)
+        self.tabs.insertTab(1, self.calibration, "Calibration")
