@@ -4,9 +4,9 @@ from pages.base_functions import BaseDAQPage
 
 class PRPage(BaseDAQPage):
 
-    def __init__(self):
+    def __init__(self, receiver, sender):
 
-        super().__init__()
+        super().__init__(receiver, sender)
 
         self.calibration = QWidget()
 

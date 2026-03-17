@@ -8,6 +8,8 @@ from pages.pr_page import PRPage
 from pages.pe_page import PEPage
 from style import STYLE
 
+from network.udp_receiver import UDPReceiver
+from network.udp_sender import UDPSender
 
 class PCB_GUI(QWidget):
 
@@ -21,23 +23,19 @@ class PCB_GUI(QWidget):
 
         layout = QVBoxLayout()
 
-        # Navigation bar
+        # Navigation bar for pages
+        self.receiver = UDPReceiver()
+        self.sender = UDPSender()
         nav = QHBoxLayout()
-
         self.back_btn = QPushButton("← Back")
-
         nav.addWidget(self.back_btn)
         nav.addStretch()
-
         layout.addLayout(nav)
-
         # Stacked pages
         self.pages = QStackedWidget()
-
         self.select_page = SelectPage()
-        self.pr_page = PRPage()
-        self.pe_page = PEPage()
-
+        self.pe_page = PEPage(self.receiver, self.sender)
+        self.pr_page = PRPage(self.receiver, self.sender)
         self.pages.addWidget(self.select_page)
         self.pages.addWidget(self.pr_page)
         self.pages.addWidget(self.pe_page)
