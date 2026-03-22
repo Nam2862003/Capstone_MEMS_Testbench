@@ -271,4 +271,5 @@ SECTIONS
   *(.RAM_D1*)
   . = ALIGN(32);
 } >RAM_D1
+ .ARM.attributes 0 : { *(.ARM.attributes) }
 }

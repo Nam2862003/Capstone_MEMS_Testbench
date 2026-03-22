@@ -27,7 +27,7 @@ try:
 
         if elapsed >= 1.0:
             mbps = (total_bytes * 8) / (elapsed * 1e6)
-            print(f"🔥 Speed: {mbps:.2f} Mbps\n")
+            print(f"Speed: {mbps:.2f} Mbps\n")
 
             total_bytes = 0
             start_time = current_time

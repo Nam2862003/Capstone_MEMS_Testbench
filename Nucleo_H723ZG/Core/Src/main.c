@@ -210,7 +210,7 @@ int main(void)
     // 1. Handle LwIP tasks (e.g., incoming UDP packets)
     MX_LWIP_Process();
     // if (half_ready)
-    for (uint32_t i = 0; i < 100; i++) 
+    for (uint32_t i = 0; i < 8; i++) 
       {// send 4  chunks (256 samples) every loop iteration to avoid flooding the network with too many small packets
           process_half_buffer();
 
@@ -635,15 +635,28 @@ void parse_command(char *cmd)
 }
 void send_adc_data(uint32_t* data, uint32_t length)
 {
-    struct pbuf *p;
+    // struct pbuf *p;
 
-    p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_RAM);
+    // p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_RAM);
+    // if(p != NULL && upcb != NULL)
+    // {
+    //     memcpy(p->payload, data, length * sizeof(uint32_t));
+    //     udp_send(upcb, p);
+    //     pbuf_free(p);
+    // }
+ // To avoid the overhead of copying data into the pbuf, we can use PBUF_REF and point it directly to our ADC buffer. This is more efficient but requires that we ensure the data remains valid until the pbuf is sent.
+    struct pbuf *p;
+    p = pbuf_alloc(PBUF_TRANSPORT, 0, PBUF_REF);
     if(p != NULL && upcb != NULL)
     {
-        memcpy(p->payload, data, length * sizeof(uint32_t));
+        p->payload = (void*)data;
+        p->len = length * sizeof(uint32_t);
+        p->tot_len = p->len;
+
         udp_send(upcb, p);
+
         pbuf_free(p);
-    }
+}
 }
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {

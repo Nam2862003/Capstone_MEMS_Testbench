@@ -739,7 +739,7 @@ void HAL_ETH_RxAllocateCallback(uint8_t **buff)
 void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t Length)
 {
 /* USER CODE BEGIN HAL ETH RxLinkCallback */
-  printf("Received packet of length %d\r\n", Length);
+  // printf("Received packet of length %d\r\n", Length);
   struct pbuf **ppStart = (struct pbuf **)pStart;
   struct pbuf **ppEnd = (struct pbuf **)pEnd;
   struct pbuf *p = NULL;
