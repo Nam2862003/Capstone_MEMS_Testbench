@@ -14,9 +14,9 @@ set(CMAKE_C_EXTENSIONS ON)
 
 
 # Define the build type
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug")
-endif()
+set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "-O3" CACHE STRING "" FORCE)
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
 # Set the project name
 set(CMAKE_PROJECT_NAME Capstone_MEMS_Testbench)
@@ -33,7 +33,7 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
-
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -O3)
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 

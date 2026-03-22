@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "STM32 H723 Debug",
+            "type": "cortex-debug",
+            "request": "launch",
+
+            "servertype": "stlink",
+
+            "serverpath": "C:/Users/Admin/STM32CubeIDE_1.14.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.stlink-gdb-server.win32_2.1.100.202310302101/tools/bin/ST-LINK_gdbserver.exe",
+
+            "cwd": "${workspaceFolder}",
+
+            "executable": "${workspaceFolder}/build/Debug/Capstone_MEMS_Testbench.elf",
+
+            "device": "STM32H723ZG",
+            "interface": "swd",
+
+            "runToEntryPoint": "main",
+
+            "showDevDebugOutput": "raw",
+
+            // "swoConfig": {
+            //     "enabled": true,
+            //     "cpuFrequency": 550000000,
+            //     "swoFrequency": 2000000,
+            //     "source": "probe",
+            //     "decoders": [
+            //         {
+            //             "port": 0,
+            //             "type": "console",
+            //             "label": "ITM Console"
+            //         }
+            //     ]
+            // }
+        }
+    ]
+}

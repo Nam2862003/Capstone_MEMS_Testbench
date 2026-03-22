@@ -5,7 +5,7 @@ import socket
 
 class UDPSender:
 
-    def __init__(self, ip="192.168.1.141", port=5006):
+    def __init__(self, ip="192.168.1.200", port=5006):
 
         self.ip = ip
         self.port = port

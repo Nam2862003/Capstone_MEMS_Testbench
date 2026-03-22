@@ -250,4 +250,25 @@ SECTIONS
     libgcc.a:* ( * )
   }
 
+/* FIRST: reserve ETH memory */
+.lwip_sec (NOLOAD) :
+{
+  . = ABSOLUTE(0x30000000);
+  *(.RxDecripSection)
+
+  . = ABSOLUTE(0x30000080);
+  *(.TxDecripSection)
+
+  . = ABSOLUTE(0x30000100);
+  *(.Rx_PoolSection) 
+} >RAM_D2
+
+/* THEN: your ADC buffer */
+.RAM_D1 (NOLOAD) :
+{
+  . = ALIGN(32);
+  *(.RAM_D1)
+  *(.RAM_D1*)
+  . = ALIGN(32);
+} >RAM_D1
 }

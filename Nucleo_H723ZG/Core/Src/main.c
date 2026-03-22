@@ -19,14 +19,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "lwip.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "stm32h7xx_hal.h"
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
 #include "string.h"
 #include <stdint.h>
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,7 +36,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,20 +49,26 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
-COM_InitTypeDef BspCOMInit;
-__IO uint32_t BspButtonState = BUTTON_RELEASED;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim6;
 
+UART_HandleTypeDef huart3;
+
 /* USER CODE BEGIN PV */
-#define Max_ADC_BUFFER_SIZE 16384 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+#define Max_ADC_BUFFER_SIZE 4096 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+__attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
 volatile uint8_t acquisition_running = 1;
+
+volatile uint8_t half_ready = 0;
+volatile uint8_t full_ready = 0;
+
+uint32_t last_send_time = 0;
+#define CHUNK_SIZE 64 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,7 +80,9 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
+void send_adc_data(uint32_t* data, uint32_t length);
 /* USER CODE BEGIN PFP */
 void udp_receive_callback(void *arg,
                           struct udp_pcb *pcb,
@@ -84,7 +96,8 @@ void update_buffer_size(uint32_t new_size);
 
 void stop_acquisition(void);
 void start_acquisition(void);
-/* USER CODE END PFP */
+void process_half_buffer(void);
+void process_full_buffer(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -92,6 +105,14 @@ void start_acquisition(void);
 struct udp_pcb *upcb;
 struct udp_pcb *rx_pcb;
 ip_addr_t dest_ip;
+
+int __io_putchar(int ch)
+{
+  /* Place your implementation of fputc here */
+  /* e.g. write a character to the USART3 and Loop until the end of transmission */
+  HAL_UART_Transmit(&huart3, (uint8_t *)&ch, 1, 10);
+  return ch;
+}
 /* USER CODE END 0 */
 
 /**
@@ -103,10 +124,19 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
   MPU_Config();
+
+  /* Enable the CPU Cache */
+
+  /* Enable I-Cache---------------------------------------------------------*/
+  SCB_EnableICache();
+
+  /* Enable D-Cache---------------------------------------------------------*/
+  SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -134,6 +164,7 @@ int main(void)
   MX_ADC2_Init();
   MX_TIM6_Init();
   MX_LWIP_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start(&hadc2);   // start slave ADC first
 
@@ -146,8 +177,9 @@ int main(void)
   HAL_TIM_Base_Start(&htim6); // start timer, this will trigger the ADC conversions via the timer TRGO
 
   // Initialize UDP connection
-  IP4_ADDR(&dest_ip, 192,168,1,141);   // your PC IP
+  
   upcb = udp_new();
+  IP4_ADDR(&dest_ip, 192,168,0,100);   // your PC IP
   if(upcb != NULL)
   {
       udp_connect(upcb, &dest_ip, 5005);
@@ -168,57 +200,23 @@ int main(void)
   }
   /* USER CODE END 2 */
 
-  /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
-  BSP_LED_Init(LED_YELLOW);
-  BSP_LED_Init(LED_RED);
-
-  /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-  BspCOMInit.BaudRate   = 115200;
-  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-  BspCOMInit.StopBits   = COM_STOPBITS_1;
-  BspCOMInit.Parity     = COM_PARITY_NONE;
-  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-  {
-    Error_Handler();
-  }
-
-  /* USER CODE BEGIN BSP */
-
-  /* -- Sample board code to send message over COM1 port ---- */
-  printf("Welcome to STM32 world !\n\r");
-
-  /* -- Sample board code to switch on leds ---- */
-  BSP_LED_On(LED_GREEN);
-  BSP_LED_On(LED_YELLOW);
-  BSP_LED_On(LED_RED);
-
-  /* USER CODE END BSP */
-
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    MX_LWIP_Process();
-    /* -- Sample board code for User push-button in interrupt mode ---- */
-    if (BspButtonState == BUTTON_PRESSED)
-    {
-      /* Update button state */
-      BspButtonState = BUTTON_RELEASED;
-      /* -- Sample board code to toggle leds ---- */
-      BSP_LED_Toggle(LED_GREEN);
-      BSP_LED_Toggle(LED_YELLOW);
-      BSP_LED_Toggle(LED_RED);
-
-      /* ..... Perform your action ..... */
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // 1. Handle LwIP tasks (e.g., incoming UDP packets)
+    MX_LWIP_Process();
+    // if (half_ready)
+    for (uint32_t i = 0; i < 100; i++) 
+      {// send 4  chunks (256 samples) every loop iteration to avoid flooding the network with too many small packets
+          process_half_buffer();
+
+      // if (full_ready)
+          process_full_buffer();
+      }
   }
   /* USER CODE END 3 */
 }
@@ -238,26 +236,25 @@ void SystemClock_Config(void)
 
   /** Configure the main internal regulator output voltage
   */
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
   while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
-  RCC_OscInitStruct.HSICalibrationValue = 64;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 12;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 1;
+  RCC_OscInitStruct.PLL.PLLN = 68;
   RCC_OscInitStruct.PLL.PLLP = 1;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
-  RCC_OscInitStruct.PLL.PLLFRACN = 0;
+  RCC_OscInitStruct.PLL.PLLFRACN = 6144;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -270,13 +267,13 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV2;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -293,9 +290,9 @@ void PeriphCommonClock_Config(void)
   /** Initializes the peripherals clock
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInitStruct.PLL2.PLL2M = 4;
-  PeriphClkInitStruct.PLL2.PLL2N = 12;
-  PeriphClkInitStruct.PLL2.PLL2P = 4;
+  PeriphClkInitStruct.PLL2.PLL2M = 1;
+  PeriphClkInitStruct.PLL2.PLL2N = 24;
+  PeriphClkInitStruct.PLL2.PLL2P = 2;
   PeriphClkInitStruct.PLL2.PLL2Q = 2;
   PeriphClkInitStruct.PLL2.PLL2R = 2;
   PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
@@ -331,7 +328,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
@@ -362,7 +359,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
@@ -401,7 +398,7 @@ static void MX_ADC2_Init(void)
   */
   hadc2.Instance = ADC2;
   hadc2.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
-  hadc2.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc2.Init.Resolution = ADC_RESOLUTION_16B;
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc2.Init.LowPowerAutoWait = DISABLE;
@@ -455,9 +452,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 0;
+  htim6.Init.Prescaler = 25-1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 95;
+  htim6.Init.Period = 11-1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -476,6 +473,54 @@ static void MX_TIM6_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart3, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart3, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -486,7 +531,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
 
 }
@@ -503,9 +548,12 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -589,7 +637,7 @@ void send_adc_data(uint32_t* data, uint32_t length)
 {
     struct pbuf *p;
 
-    p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_POOL);
+    p = pbuf_alloc(PBUF_TRANSPORT, length * sizeof(uint32_t), PBUF_RAM);
     if(p != NULL && upcb != NULL)
     {
         memcpy(p->payload, data, length * sizeof(uint32_t));
@@ -599,25 +647,60 @@ void send_adc_data(uint32_t* data, uint32_t length)
 }
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    if(hadc->Instance == ADC1)
-    {
-        for(uint32_t i=0;i<active_buffer_size/2;i+=256)
-        {
-            send_adc_data(&adc_buffer[i],256);
-        }
-    }
+    // if(hadc->Instance == ADC1)
+    // {
+    //     for(uint32_t i=0;i<active_buffer_size/2;i+=CHUNK_SIZE)
+    //     {
+    //         send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+    //     }
+        half_ready = 1;
+    // }
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    if(hadc->Instance == ADC1)
+    // if(hadc->Instance == ADC1)
+    // {
+    //     for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=CHUNK_SIZE)
+    //     {
+    //         send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+    //     }
+        full_ready = 1;
+    // }
+}
+
+static uint32_t half_index = 0;
+
+void process_half_buffer(void)
+{
+    if (!half_ready) return;
+
+    send_adc_data(&adc_buffer[half_index], CHUNK_SIZE);
+    half_index += CHUNK_SIZE;
+
+    if (half_index >= active_buffer_size/2)
     {
-        for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=256)
-        {
-            send_adc_data(&adc_buffer[i],256);
-        }
+        half_index = 0;
+        half_ready = 0;
     }
 }
+
+static uint32_t full_index = 0;
+
+void process_full_buffer(void)
+{
+    if (!full_ready) return;
+
+    send_adc_data(&adc_buffer[active_buffer_size/2 + full_index], CHUNK_SIZE);
+    full_index += CHUNK_SIZE;
+
+    if (full_index >= active_buffer_size/2)
+    {
+        full_index = 0;
+        full_ready = 0;
+    }
+}
+
 
 /* USER CODE END 4 */
 
@@ -634,11 +717,11 @@ void MPU_Config(void)
   */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = 0x0;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
-  MPU_InitStruct.SubRegionDisable = 0x87;
-  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+  MPU_InitStruct.BaseAddress = 0x30000000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_32KB;
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
@@ -648,19 +731,6 @@ void MPU_Config(void)
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
-}
-
-/**
-  * @brief BSP Push Button callback
-  * @param Button Specifies the pressed button
-  * @retval None
-  */
-void BSP_PB_Callback(Button_TypeDef Button)
-{
-  if (Button == BUTTON_USER)
-  {
-    BspButtonState = BUTTON_PRESSED;
-  }
 }
 
 /**

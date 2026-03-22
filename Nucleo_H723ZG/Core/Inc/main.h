@@ -29,9 +29,6 @@ extern "C" {
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
 
-#include "stm32h7xx_nucleo.h"
-#include <stdio.h>
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -60,10 +57,6 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define SWDIO_Pin GPIO_PIN_13
-#define SWDIO_GPIO_Port GPIOA
-#define SWCLK_Pin GPIO_PIN_14
-#define SWCLK_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 

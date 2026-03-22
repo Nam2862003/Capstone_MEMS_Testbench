@@ -116,9 +116,13 @@ class BaseDAQPage(QWidget):
     # PLOTTING
     # =========================
 
-    def update_plot(self):
+def update_plot(self):
 
-        adc1, adc2 = self.receiver.get_data()
+    adc1, adc2 = self.receiver.get_data()
 
-        self.curve1.setData(adc1)
-        self.curve2.setData(adc2)
+    # Optional: downsample for speed
+    adc1 = adc1[::10]
+    adc2 = adc2[::10]
+
+    self.curve1.setData(adc1)
+    self.curve2.setData(adc2)
