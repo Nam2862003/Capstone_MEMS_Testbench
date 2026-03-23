@@ -253,14 +253,16 @@ SECTIONS
 /* FIRST: reserve ETH memory */
 .lwip_sec (NOLOAD) :
 {
-  . = ABSOLUTE(0x30000000);
+  . = ALIGN(32);
   *(.RxDecripSection)
 
-  . = ABSOLUTE(0x30000080);
+  . = ALIGN(32);
   *(.TxDecripSection)
 
-  . = ABSOLUTE(0x30000100);
-  *(.Rx_PoolSection) 
+  . = ALIGN(32);
+  *(.Rx_PoolSection)
+
+  . = ALIGN(32);
 } >RAM_D2
 
 /* THEN: your ADC buffer */

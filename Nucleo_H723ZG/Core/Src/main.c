@@ -68,7 +68,7 @@ volatile uint8_t half_ready = 0;
 volatile uint8_t full_ready = 0;
 
 uint32_t last_send_time = 0;
-#define CHUNK_SIZE 350 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+#define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -211,12 +211,10 @@ int main(void)
     MX_LWIP_Process();
     // if (half_ready)
     
-      // send 4  chunks (256 samples) every loop iteration to avoid flooding the network with too many small packets
-          process_half_buffer();
-
-      // if (full_ready)
-          process_full_buffer();
-      
+ 
+          // process_half_buffer();
+          // process_full_buffer();
+  
   }
   /* USER CODE END 3 */
 }
@@ -652,67 +650,68 @@ void send_adc_data(uint32_t* data, uint32_t length)
         p->payload = (void*)data;
         p->len = length * sizeof(uint32_t);
         p->tot_len = p->len;
-
+        // VERY IMPORTANT: clean DCache
+        SCB_CleanDCache_by_Addr((uint32_t*)data, p->len);
         udp_send(upcb, p);
 
         pbuf_free(p);
-}
+    }
 }
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    // if(hadc->Instance == ADC1)
-    // {
-    //     for(uint32_t i=0;i<active_buffer_size/2;i+=CHUNK_SIZE)
-    //     {
-    //         send_adc_data(&adc_buffer[i],CHUNK_SIZE);
-    //     }
+    if(hadc->Instance == ADC1)
+    {
+        for(uint32_t i=0;i<active_buffer_size/2;i+=CHUNK_SIZE)
+        {
+            send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+        }
         half_ready = 1;
-    // }
+    }
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    // if(hadc->Instance == ADC1)
-    // {
-    //     for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=CHUNK_SIZE)
-    //     {
-    //         send_adc_data(&adc_buffer[i],CHUNK_SIZE);
-    //     }
+    if(hadc->Instance == ADC1)
+    {
+        for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=CHUNK_SIZE)
+        {
+            send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+        }
         full_ready = 1;
-    // }
-}
-
-static uint32_t half_index = 0;
-
-void process_half_buffer(void)
-{
-    if (!half_ready) return;
-
-    send_adc_data(&adc_buffer[half_index], CHUNK_SIZE);
-    half_index += CHUNK_SIZE;
-
-    if (half_index >= active_buffer_size/2)
-    {
-        half_index = 0;
-        half_ready = 0;
     }
 }
 
-static uint32_t full_index = 0;
+// static uint32_t half_index = 0;
 
-void process_full_buffer(void)
-{
-    if (!full_ready) return;
+// void process_half_buffer(void)
+// {
+//     if (!half_ready) return;
 
-    send_adc_data(&adc_buffer[active_buffer_size/2 + full_index], CHUNK_SIZE);
-    full_index += CHUNK_SIZE;
+//     send_adc_data(&adc_buffer[half_index], CHUNK_SIZE);
+//     half_index += CHUNK_SIZE;
 
-    if (full_index >= active_buffer_size/2)
-    {
-        full_index = 0;
-        full_ready = 0;
-    }
-}
+//     if (half_index >= active_buffer_size/2)
+//     {
+//         half_index = 0;
+//         half_ready = 0;
+//     }
+// }
+
+// static uint32_t full_index = 0;
+
+// void process_full_buffer(void)
+// {
+//     if (!full_ready) return;
+
+//     send_adc_data(&adc_buffer[active_buffer_size/2 + full_index], CHUNK_SIZE);
+//     full_index += CHUNK_SIZE;
+
+//     if (full_index >= active_buffer_size/2)
+//     {
+//         full_index = 0;
+//         full_ready = 0;
+//     }
+// }
 
 
 /* USER CODE END 4 */
