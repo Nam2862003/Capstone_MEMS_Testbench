@@ -68,7 +68,7 @@ volatile uint8_t half_ready = 0;
 volatile uint8_t full_ready = 0;
 
 uint32_t last_send_time = 0;
-#define CHUNK_SIZE 64 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+#define CHUNK_SIZE 350 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -210,13 +210,13 @@ int main(void)
     // 1. Handle LwIP tasks (e.g., incoming UDP packets)
     MX_LWIP_Process();
     // if (half_ready)
-    for (uint32_t i = 0; i < 8; i++) 
-      {// send 4  chunks (256 samples) every loop iteration to avoid flooding the network with too many small packets
+    
+      // send 4  chunks (256 samples) every loop iteration to avoid flooding the network with too many small packets
           process_half_buffer();
 
       // if (full_ready)
           process_full_buffer();
-      }
+      
   }
   /* USER CODE END 3 */
 }
