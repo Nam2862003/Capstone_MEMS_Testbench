@@ -25,6 +25,7 @@
 #include "stm32h7xx_hal.h"
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
+#include "stm32h7xx_hal_adc.h"
 #include "string.h"
 #include <stdint.h>
 /* USER CODE END Includes */
@@ -62,12 +63,13 @@ UART_HandleTypeDef huart3;
 __attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
-volatile uint8_t acquisition_running = 1;
+volatile uint8_t adc_running = 1;
+volatile uint8_t dac_running = 1;
 
-volatile uint8_t half_ready = 0;
-volatile uint8_t full_ready = 0;
+// volatile uint8_t half_ready = 0;
+// volatile uint8_t full_ready = 0;
 
-uint32_t last_send_time = 0;
+// uint32_t last_send_time = 0;
 #define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
@@ -561,35 +563,58 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void stop_acquisition(void)
 {
-    acquisition_running = 0;
-
     HAL_TIM_Base_Stop(&htim6);
-    HAL_ADC_Stop_DMA(&hadc1);
+    // HAL_ADC_Stop_DMA(&hadc1);
+    // HAL_ADC_Stop(&hadc1);
+    HAL_ADC_Stop(&hadc2);
+    adc_running = 0;
 }
 
 void start_acquisition(void)
 {
+    HAL_Delay(1);  // Add a small delay
+    HAL_ADC_Start(&hadc2);   // 🔥 restart slave ADC
     HAL_ADCEx_MultiModeStart_DMA(
         &hadc1,
         (uint32_t*)adc_buffer,
         active_buffer_size
     );
-
     HAL_TIM_Base_Start(&htim6);
-
-    acquisition_running = 1;
+    adc_running = 1;
 }
 void update_buffer_size(uint32_t new_size)
 {
     if(new_size < 512 || new_size > Max_ADC_BUFFER_SIZE)
         return;
 
-    if(acquisition_running)
+    if(adc_running == 1)
+    {
         stop_acquisition();
-
+    }
     active_buffer_size = new_size;
+}
+void update_sampling_rate(uint32_t fs)
+{
+    if(fs < 1000 || fs > 2000000)
+        return;
 
-    start_acquisition();
+    uint32_t timer_clk = 275000000;   // 🔥 FIXED
+
+    uint32_t prescaler = 24;          // (25-1)
+    uint32_t period;
+
+    period = (timer_clk / ((prescaler + 1) * fs)) - 1;
+
+    if(period > 0xFFFF)
+        return;
+    if(adc_running == 1)
+    {
+      stop_acquisition();
+    }
+    __HAL_TIM_SET_AUTORELOAD(&htim6, period);
+    __HAL_TIM_SET_COUNTER(&htim6, 0);
+  // printf("Fs updated: %lu Hz (ARR=%lu) \r\n", fs, period);
+
 }
 void udp_receive_callback(void *arg,
                           struct udp_pcb *pcb,
@@ -620,15 +645,28 @@ void parse_command(char *cmd)
 
         update_buffer_size(size);
     }
+    else if(strncmp(cmd,"SAMP",3)==0)
+    {
+        uint32_t fs;
+
+        sscanf(cmd,"SAMP,%lu",&fs);
+
+        update_sampling_rate(fs);
+    }
     else if(strncmp(cmd,"START",5)==0)
     {
-        if(!acquisition_running)
+        if(adc_running == 0)
+          {
             start_acquisition();
+          }
     }
     else if(strncmp(cmd,"STOP",4)==0)
     {
-        if(acquisition_running)
+        if(adc_running == 1)
+          {
             stop_acquisition();
+            
+          }
     }
 }
 void send_adc_data(uint32_t* data, uint32_t length)
@@ -665,7 +703,7 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
         {
             send_adc_data(&adc_buffer[i],CHUNK_SIZE);
         }
-        half_ready = 1;
+        // half_ready = 1;
     }
 }
 
@@ -677,7 +715,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         {
             send_adc_data(&adc_buffer[i],CHUNK_SIZE);
         }
-        full_ready = 1;
+        // full_ready = 1;
     }
 }
 

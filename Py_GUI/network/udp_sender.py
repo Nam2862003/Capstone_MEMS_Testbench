@@ -5,7 +5,7 @@ import socket
 
 class UDPSender:
 
-    def __init__(self, ip="192.168.1.200", port=5006):
+    def __init__(self, ip="192.168.0.123", port=5006):
 
         self.ip = ip
         self.port = port
@@ -22,11 +22,13 @@ class UDPSender:
             print("UDP error:", e)
 
     # convenience functions
-    def start(self):
+    def start_aq(self):
         self.send("START")
 
-    def stop(self):
+    def stop_aq(self):
         self.send("STOP")
 
     def set_buffer(self, size):
         self.send(f"BUF,{size}")
+    def set_sampling_rate(self, rate):
+        self.send(f"SAMP,{rate}")

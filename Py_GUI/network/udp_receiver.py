@@ -42,6 +42,9 @@ class UDPReceiver:
                 # Convert raw bytes → uint32 array
                 samples = np.frombuffer(data, dtype=np.uint32)
 
+                if len(samples) == 0:
+                    continue
+
                 # Extract ADC values
                 adc1 = samples & 0xFFFF
                 adc2 = (samples >> 16) & 0xFFFF
