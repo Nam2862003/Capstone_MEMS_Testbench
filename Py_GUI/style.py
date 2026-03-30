@@ -71,6 +71,11 @@ QTabBar::tab:hover {
     background: #3a3a3a;
 }
 
+QTabBar::tab:disabled {
+    color: #777777;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+}
 
 /* =========================
    PR PAGE TAB COLOR

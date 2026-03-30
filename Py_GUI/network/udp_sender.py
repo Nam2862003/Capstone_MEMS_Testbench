@@ -31,4 +31,4 @@ class UDPSender:
     def set_buffer(self, size):
         self.send(f"BUF,{size}")
     def set_sampling_rate(self, rate):
-        self.send(f"SAMP,{rate}")
+        self.send(f"ADC SAMP,{rate}")

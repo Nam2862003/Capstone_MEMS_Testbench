@@ -8,11 +8,11 @@ class PRPage(BaseDAQPage):
 
         super().__init__(receiver, sender)
 
-        self.calibration = QWidget()
+        # self.calibration = QWidget()
 
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Calibration Tools"))
+        # layout = QVBoxLayout()
+        # layout.addWidget(QLabel("Calibration Tools"))
 
-        self.calibration.setLayout(layout)
+        # self.calibration.setLayout(layout)
 
-        self.tabs.insertTab(1, self.calibration, "Calibration")
+        # self.tabs.insertTab(1, self.calibration, "Calibration")

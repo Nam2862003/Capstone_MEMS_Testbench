@@ -26,6 +26,7 @@
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
 #include "stm32h7xx_hal_adc.h"
+// #include "stm32h7xx_hal_dac.h"
 #include "string.h"
 #include <stdint.h>
 /* USER CODE END Includes */
@@ -64,7 +65,7 @@ __attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
 volatile uint8_t adc_running = 1;
-volatile uint8_t dac_running = 1;
+// volatile uint8_t dac_running = 1;
 
 // volatile uint8_t half_ready = 0;
 // volatile uint8_t full_ready = 0;
@@ -93,13 +94,11 @@ void udp_receive_callback(void *arg,
                           u16_t port);
 
 void parse_command(char *cmd);
-
-void update_buffer_size(uint32_t new_size);
-
-void stop_acquisition(void);
-void start_acquisition(void);
-void process_half_buffer(void);
-void process_full_buffer(void);
+void update_adc_buffer_size(uint32_t new_size);
+void stop_adc_acquisition(void);
+void start_adc_acquisition(void);
+// void process_half_buffer(void);
+// void process_full_buffer(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -108,6 +107,17 @@ struct udp_pcb *upcb;
 struct udp_pcb *rx_pcb;
 ip_addr_t dest_ip;
 
+// #define SINE_SAMPLES 128
+// uint16_t sine_table[SINE_SAMPLES];
+
+// void generate_sine_table(void)
+// {
+//     for(int i = 0; i < SINE_SAMPLES; i++)
+//     {
+//         float angle = 2.0f * 3.14159265f * i / SINE_SAMPLES;
+//         sine_table[i] = (uint16_t)(2048 + 2047 * sinf(angle));
+//     }
+// }
 int __io_putchar(int ch)
 {
   /* Place your implementation of fputc here */
@@ -168,8 +178,14 @@ int main(void)
   MX_LWIP_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start(&hadc2);   // start slave ADC first
+  // generate_sine_table();
+  // HAL_DAC_Start_DMA(&hdac1,
+  //                 DAC_CHANNEL_1,
+  //                 (uint32_t*)sine_table,
+  //                 SINE_SAMPLES,
+  //                 DAC_ALIGN_12B_R);
 
+  HAL_ADC_Start(&hadc2);   // start slave ADC first
   HAL_ADCEx_MultiModeStart_DMA(
       &hadc1,
       (uint32_t*)adc_buffer,
@@ -361,7 +377,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -561,7 +577,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void stop_acquisition(void)
+void stop_adc_acquisition(void)
 {
     HAL_TIM_Base_Stop(&htim6);
     // HAL_ADC_Stop_DMA(&hadc1);
@@ -570,7 +586,7 @@ void stop_acquisition(void)
     adc_running = 0;
 }
 
-void start_acquisition(void)
+void start_adc_acquisition(void)
 {
     HAL_Delay(1);  // Add a small delay
     HAL_ADC_Start(&hadc2);   // 🔥 restart slave ADC
@@ -589,16 +605,28 @@ void update_buffer_size(uint32_t new_size)
 
     if(adc_running == 1)
     {
-        stop_acquisition();
+      
+        stop_adc_acquisition();
     }
     active_buffer_size = new_size;
 }
-void update_sampling_rate(uint32_t fs)
+void update_adc_sampling_rate(uint32_t fs)
 {
     if(fs < 1000 || fs > 2000000)
         return;
 
-    uint32_t timer_clk = 275000000;   // 🔥 FIXED
+    uint32_t pclk = HAL_RCC_GetPCLK1Freq();
+    uint32_t timer_clk;
+    if ((RCC->D2CFGR & RCC_D2CFGR_D2PPRE1) != 0)
+    {
+        timer_clk = pclk * 2;  // prescaler > 1 → timer clock doubled
+    }
+    else
+    {
+        timer_clk = pclk;      // prescaler = 1 → no doubling
+    } // TIM6 is on APB1, and APB1 timer clocks are typically doubled when APB1 prescaler is not 1
+    printf("PCLK1 = %lu Hz\n", HAL_RCC_GetPCLK1Freq());
+    printf("Timer clk = %lu Hz\n", timer_clk);
 
     uint32_t prescaler = 24;          // (25-1)
     uint32_t period;
@@ -609,7 +637,7 @@ void update_sampling_rate(uint32_t fs)
         return;
     if(adc_running == 1)
     {
-      stop_acquisition();
+      stop_adc_acquisition();
     }
     __HAL_TIM_SET_AUTORELOAD(&htim6, period);
     __HAL_TIM_SET_COUNTER(&htim6, 0);
@@ -645,26 +673,26 @@ void parse_command(char *cmd)
 
         update_buffer_size(size);
     }
-    else if(strncmp(cmd,"SAMP",3)==0)
+    else if(strncmp(cmd,"ADC SAMP",8)==0)
     {
         uint32_t fs;
 
-        sscanf(cmd,"SAMP,%lu",&fs);
+        sscanf(cmd,"ADC SAMP,%lu",&fs);
 
-        update_sampling_rate(fs);
+        update_adc_sampling_rate(fs);
     }
     else if(strncmp(cmd,"START",5)==0)
     {
         if(adc_running == 0)
           {
-            start_acquisition();
+            start_adc_acquisition();
           }
     }
     else if(strncmp(cmd,"STOP",4)==0)
     {
         if(adc_running == 1)
           {
-            stop_acquisition();
+            stop_adc_acquisition();
             
           }
     }
