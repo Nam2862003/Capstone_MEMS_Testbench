@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli-complete.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch.rule"
+		},
+		{
+			"file" : "C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"Nucleo_H7S3L8_Appli"
+		],
+		"name" : "Nucleo_H7S3L8_Appli"
+	}
+}

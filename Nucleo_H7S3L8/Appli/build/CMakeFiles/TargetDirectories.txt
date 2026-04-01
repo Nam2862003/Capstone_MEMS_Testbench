@@ -1,0 +1,5 @@
+C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/CMakeFiles/Nucelo_H7S3L8_Appli.dir
+C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/CMakeFiles/STM32_Drivers.dir
+C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/CMakeFiles/STM32_USB_Device_Library.dir
+C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/CMakeFiles/edit_cache.dir
+C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/CMakeFiles/rebuild_cache.dir

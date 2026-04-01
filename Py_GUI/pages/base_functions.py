@@ -20,9 +20,7 @@ class BaseDAQPage(QWidget):
         self.sender = sender
 
         layout = QVBoxLayout()
-
         self.tabs = QTabWidget()
-
         self.setup = QWidget()
         self.sweep = QWidget()
         self.live_data = QWidget()
@@ -296,19 +294,19 @@ class BaseDAQPage(QWidget):
     # 1. Axis selectors
     # ========================================================
 
-    def compute_y(self, mode, signal, amp, phase):
+    def compute_y(self, mode, adc1, adc2, amp, phase):
 
         if mode == "Raw ADC1 and ADC2 (V)":
-            return np.column_stack((signal, signal))
+            return np.column_stack((adc1, adc2))
 
         elif mode == "Amplitude (dB)":
-            return np.full_like(signal, amp)
+            return np.full_like(adc2, amp)
 
         elif mode == "Phase (deg)":
-            return np.full_like(signal, np.degrees(phase))
+            return np.full_like(adc2, np.degrees(phase))
 
-        return signal
-    
+        return adc2
+
     def compute_x(self, mode, N, fs, freq):
 
         if mode == "Time":
@@ -380,7 +378,7 @@ class BaseDAQPage(QWidget):
         N = len(adc2)
 
         x = self.compute_x(x_mode, N, fs, f_ref)
-        y = self.compute_y(y_mode, adc2, amp, phase)
+        y = self.compute_y(y_mode, adc1, adc2, amp, phase)
 
         # ===============================
         # Setting 1: FREQUENCY on x-axis 
