@@ -44,6 +44,22 @@ QComboBox:hover {
     border: 1px solid #0078d4;
 }
 
+QComboBox QAbstractItemView {
+    background-color: #1f1f1f;
+    color: #e0e0e0;
+    selection-background-color: #0078d4;
+}
+
+/* ✅ Disabled items (this fixes your problem) */
+QComboBox QAbstractItemView::item:disabled {
+    color: #777777;
+    background-color: #1a1a1a;
+}
+
+/* optional: prevent highlight on disabled */
+QComboBox QAbstractItemView::item:disabled:selected {
+    background: #1a1a1a;
+}
 
 /* =========================
    TABS (GENERAL)

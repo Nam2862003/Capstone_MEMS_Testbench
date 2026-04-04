@@ -27,7 +27,7 @@ class BaseDAQPage(QWidget):
 
         self.tabs.addTab(self.setup, "Setup")
         self.tabs.addTab(self.sweep, "Sweep (DDS)")
-        self.tabs.addTab(self.live_data, "Live Data (BNC)")
+        self.tabs.addTab(self.live_data, "Live Data (Function Generator)")
 
         layout.addWidget(self.tabs)
         self.setLayout(layout)
@@ -119,7 +119,7 @@ class BaseDAQPage(QWidget):
         self.enable_dac_btn.clicked.connect(self.enable_dac)
         self.disable_dac_btn.clicked.connect(self.disable_dac)
     # =========================
-    # 2. ACQUISITION TAB
+    # 2. SwEEP TAB
     # =========================
     def build_sweep_tab(self):
 
@@ -244,81 +244,49 @@ class BaseDAQPage(QWidget):
     # =========================
     def update_actuator(self):
         actuator = self.actuator_selector.currentText()
-
         # tab indexes (IMPORTANT: adjust if different)
         SETUP_TAB = 0
         SWEEP_TAB = 1
         LIVE_TAB  = 2
-
         if actuator == "Function Generator":
             # disable Sweep (DDS)
             self.tabs.setTabEnabled(SWEEP_TAB, False)
             self.tabs.setTabEnabled(LIVE_TAB, True)
-
         elif actuator == "Direct Digital Synthesis (DDS)":
             # disable Live Data
             self.tabs.setTabEnabled(SWEEP_TAB, True)
             self.tabs.setTabEnabled(LIVE_TAB, False)
-
         elif actuator == "STM32 DAC Output":
             # optional: allow both
             self.tabs.setTabEnabled(SWEEP_TAB, True)
             self.tabs.setTabEnabled(LIVE_TAB, True)
     # Update axis options based on measurement method (e.g. disable Frequency x-axis for RMS)
     def update_axis_constraints(self):
-
         y_mode = self.y_selector.currentText()
-
         # get model of x_selector
         model = self.x_selector.model()
-
         for i in range(self.x_selector.count()):
             text = self.x_selector.itemText(i)
-
             if y_mode == "Raw ADC1 and ADC2 (V)":
                 # disable Frequency
                 if text == "Frequency":
                     model.item(i).setEnabled(False)
-
                     # if currently selected → force switch
                     if self.x_selector.currentText() == "Frequency":
                         self.x_selector.setCurrentText("Time")
-
+            elif y_mode in ["Amplitude (dB)", "Phase (deg)"]:
+                # disable Time
+                 if text == "Time":
+                    model.item(i).setEnabled(False)
+                    # if currently selected → force switch
+                    if self.x_selector.currentText() == "Time":
+                        self.x_selector.setCurrentText("Frequency")
             else:
                 # enable everything
                 model.item(i).setEnabled(True)
-
     # ========================================================
     # PLOTTING
     # ========================================================
-    # 1. Axis selectors
-    # ========================================================
-
-    def compute_y(self, mode, adc1, adc2, amp, phase):
-
-        if mode == "Raw ADC1 and ADC2 (V)":
-            return np.column_stack((adc1, adc2))
-
-        elif mode == "Amplitude (dB)":
-            return np.full_like(adc2, amp)
-
-        elif mode == "Phase (deg)":
-            return np.full_like(adc2, np.degrees(phase))
-
-        return adc2
-
-    def compute_x(self, mode, N, fs, freq):
-
-        if mode == "Time":
-            t = np.arange(N) / fs + self.time_offset
-            self.time_offset = t[-1]  # update for next frame
-            return t
-
-        elif mode == "Frequency":
-            return np.full(N, freq)
-
-        return np.arange(N)
-    # =========================
     def reset_sweep(self):
         self.sweep_freqs.clear()
         self.sweep_amp.clear()
@@ -333,27 +301,16 @@ class BaseDAQPage(QWidget):
         self.sender.send(f"DAC:{freq}")
         
     def update_plot(self):
-
         adc1, adc2 = self.receiver.get_data() # Code is on udp_receiver.py
-
         fs = float(self.sampling_rate_input.text())
-        if self.sweeping:
+        if self.sweeping == True:
             f_ref = self.current_freq
         else:
             f_ref = float(self.dac_freq_input.text())
-
-        # -------- DOWNSAMPLE --------
-        # downsample = 10
-        # adc1 = adc1[::downsample]
-        # adc2 = adc2[::downsample]
-
-        # fs = fs / downsample
-
         # -------- ADC → VOLTAGE --------
         adc1 = adc1 / 65535 * 3.3
         adc2 = adc2 / 65535 * 3.3
-        # self.curve1.setData(adc1)
-        # self.curve2.setData(adc2)
+        N = len(adc2)
         # -------- Selection of measurement method and create plotting --------
         mode = self.mode_selector.currentText()
         if mode == "Lock-in Amplifier":
@@ -372,72 +329,59 @@ class BaseDAQPage(QWidget):
             amp, phase, _, _ = fft_amplitude_phase(adc1, adc2, fs, f_ref)
 
         # -------- AXIS SELECTION --------
-        y_mode = self.y_selector.currentText()
-        x_mode = self.x_selector.currentText()
-
-        N = len(adc2)
-
-        x = self.compute_x(x_mode, N, fs, f_ref)
-        y = self.compute_y(y_mode, adc1, adc2, amp, phase)
-
+        y_axis = self.y_selector.currentText()
+        x_axis = self.x_selector.currentText()
         # ===============================
         # Setting 1: FREQUENCY on x-axis 
         # ===============================
-        if x_mode == "Frequency":
-
+        if x_axis == "Frequency":
             # store only if frequency changed
             if self.last_freq != f_ref:
                 self.sweep_freqs.append(f_ref)
                 self.sweep_amp.append(amp)
                 self.sweep_phase.append(np.degrees(phase))
                 self.last_freq = f_ref
-
             freqs = np.array(self.sweep_freqs)
             amps = np.array(self.sweep_amp)
             phases = np.array(self.sweep_phase)
-
             if len(freqs) == 0:
                 return
-
             # sort
             idx = np.argsort(freqs)
             freqs = freqs[idx]
             amps = amps[idx]
             phases = phases[idx]
-
             # select Y
-            if y_mode == "Raw ADC1 and ADC2 (V)":
-                y_sweep = np.column_stack((adc1, adc2))
-            elif y_mode == "Amplitude (dB)":
+            if y_axis == "Amplitude (dB)":
                 y_sweep = amps
-            elif y_mode == "Phase (deg)":
+            elif y_axis == "Phase (deg)":
                 y_sweep = phases
             else:
                 return  # prevent Voltage vs Frequency bug
-
+            self.curve1.clear()
+            self.curve2.clear()
+            self.plot_widget.enableAutoRange(axis='y', enable=True)
             self.curve1.setData(freqs, y_sweep)
-
         # ===============================
         # Setting 2: TIME on x-axis
         # ===============================
-        else:
-            if y_mode == "Raw ADC1 and ADC2 (V)":
-                self.curve1.setData(x, adc1)
-                self.curve2.setData(x, adc2)
-            else:
-                self.curve1.setData(x, y)
+        else:   
+                self.curve1.clear()
                 self.curve2.clear()
+                self.plot_widget.enableAutoRange(axis='y', enable=False)
+                self.plot_widget.setYRange(0, 1)   # or tighter range
+                time = np.arange(len(adc2)) / fs + self.time_offset
+                self.time_offset = time[-1]  # update for next frame
+                self.curve1.setData(time, adc1)
+                self.curve2.setData(time, adc2)
         # ===============================
         # SWEEP STEP LOGIC
         # ===============================
         if self.sweeping:
-
             step = float(self.step_freq.text())
             stop = float(self.stop_freq.text())
-
             # move to next frequency
             self.current_freq += step
-
             if self.current_freq > stop:
                 print("Sweep finished")
                 self.sweeping = False

@@ -4,7 +4,7 @@ from scipy.signal import hilbert, butter, filtfilt
 
 # ---------------- LOW PASS FILTER ----------------
 def lowpass_filter(signal, cutoff, fs, order=4):
-    nyq = 0.5 * fs
+    nyq = 0.5 * fs # Nyquist frequency ()
 
     if cutoff >= nyq:
         cutoff = 0.45 * fs
@@ -47,10 +47,10 @@ def lock_in_amplifier(reference_signal,
         raise ValueError("Signal is empty")
 
     # -------- REMOVE DC OFFSET --------
-    ref = reference_signal - np.mean(reference_signal)
-    sig = input_signal - np.mean(input_signal)
+    ref_sig = reference_signal - np.mean(reference_signal)
+    input_sig = input_signal - np.mean(input_signal)
 
-    N = len(sig)
+    N = len(input_sig)
 
     # -------- REFERENCE GENERATION --------
     if use_generated:
@@ -60,26 +60,26 @@ def lock_in_amplifier(reference_signal,
 
     else:
         # Normalize reference (RMS = 1)
-        rms = np.sqrt(np.mean(ref**2))
+        rms = np.sqrt(np.mean(ref_sig**2))
         if rms == 0:
             raise ValueError("Reference signal has zero amplitude")
 
-        ref_cos = ref / (rms * np.sqrt(2))
+        ref_cos = ref_sig / (rms * np.sqrt(2))
 
         # Hilbert transform → perfect quadrature
         analytic = hilbert(ref_cos)
         ref_sin = np.imag(analytic)
 
         # Optional: normalize input same way
-        sig = sig / (rms * np.sqrt(2))
+        input_sig = input_sig / (rms * np.sqrt(2))
 
     # -------- MIXING --------
-    X = sig * ref_cos
-    Y = sig * ref_sin
+    X = input_sig * ref_cos
+    Y = input_sig * ref_sin
 
     # -------- LOW-PASS FILTER --------
     if use_filter:
-        cutoff = min(freq * 2, 0.45 * fs)
+        cutoff = min(freq * 2, 0.45 * fs) # 2x reference or 0.45*fs
         X = lowpass_filter(X, cutoff, fs)
         Y = lowpass_filter(Y, cutoff, fs)
 
