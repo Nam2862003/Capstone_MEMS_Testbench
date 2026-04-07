@@ -18,7 +18,7 @@ class PCB_GUI(QWidget):
         super().__init__()
 
         self.setWindowTitle("MEMS Data Acquisition")
-        self.resize(900, 600)
+        self.resize(1200, 600)
         self.setStyleSheet(STYLE)
 
         layout = QVBoxLayout()

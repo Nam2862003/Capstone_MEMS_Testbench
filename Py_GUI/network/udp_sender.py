@@ -22,13 +22,20 @@ class UDPSender:
             print("UDP error:", e)
 
     # convenience functions
+    # ADC control
     def start_aq(self):
-        self.send("START")
-
+        self.send("START ADC")
     def stop_aq(self):
-        self.send("STOP")
-
+        self.send("STOP ADC")
     def set_buffer(self, size):
         self.send(f"BUF,{size}")
     def set_sampling_rate(self, rate):
         self.send(f"ADC SAMP,{rate}")
+
+    # DAC control
+    def start_gen(self):
+        self.send("DAC START")
+    def stop_gen(self):
+        self.send("DAC STOP")
+    def set_dac_freq(self, freq):
+        self.send(f"DAC FREQ,{freq}")

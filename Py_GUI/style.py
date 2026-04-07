@@ -15,9 +15,9 @@ QWidget {
 QPushButton {
     background-color: #0078d4;
     color: white;
-    font-size: 15px;
+    font-size: 13px;
     border-radius: 6px;
-    padding: 8px 16px;
+    padding: 4px 10px;
 }
 
 QPushButton:hover {
@@ -130,5 +130,41 @@ QLabel#Title {
     font-size: 28px;
     font-weight: bold;
     color: #ffffff;
+}
+/* =========================
+   GROUP BOX (PANELS)
+========================= */
+
+QGroupBox {
+    border: 1px solid #555;
+    border-radius: 8px;
+    margin-top: 15px;       /* 🔥 increase space for title */
+    padding-top: 10px;      /* space inside box */
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    top: -3px;              /* 🔥 MOVE TITLE UP */
+    padding: 0 6px;
+    background-color: #121212;  /* 🔥 same as background to "cut" border */
+}
+/* =========================
+   GROUP CHECKBOXES
+========================= */
+QCheckBox {
+    font-size: 14px;
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    background-color: #1f1f1f;
+    border: 1px solid #444;
+}
+QCheckBox::indicator:checked {
+    background-color: #0078d4;   /* 🔥 blue fill */
+    border: 1px solid #0078d4;
 }
 """
