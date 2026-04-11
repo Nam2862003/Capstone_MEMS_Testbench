@@ -2,8 +2,7 @@
     "configurations": [
         {
             "name": "STM32",
-            "compileCommands": "Appli/build/compile_commands.json",
-            "intelliSenseMode": "gcc-arm"
+            "compileCommands": "${workspaceFolder}/Appli/build/compile_commands.json"
         }
     ],
     "version": 4

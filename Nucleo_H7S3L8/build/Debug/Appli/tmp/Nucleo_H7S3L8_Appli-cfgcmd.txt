@@ -1,1 +1,1 @@
-cmd='C:/Program Files/CMake/bin/cmake.exe;-DCMAKE_EXPORT_COMPILE_COMMANDS=ON;-DCMAKE_TOOLCHAIN_FILE=C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/gcc-arm-none-eabi.cmake;-DCMAKE_BUILD_TYPE=Debug;-GNinja;-S;<SOURCE_DIR><SOURCE_SUBDIR>;-B;<BINARY_DIR>'
+cmd='C:/Users/Admin/AppData/Local/stm32cube/bundles/cmake/4.0.1+st.3/bin/cmake.exe;-DCMAKE_EXPORT_COMPILE_COMMANDS=ON;-DCMAKE_TOOLCHAIN_FILE=C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/gcc-arm-none-eabi.cmake;-DCMAKE_BUILD_TYPE=Debug;-GNinja;-S;<SOURCE_DIR><SOURCE_SUBDIR>;-B;<BINARY_DIR>'

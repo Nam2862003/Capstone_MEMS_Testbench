@@ -26,11 +26,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 set(STM32_MCU_FLAGS  "-mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard " )
 
 #Linker options
-set(STM32_LINKER_SCRIPT stm32h7rsxx_ROMxspi2.ld)
+set(STM32_LINKER_SCRIPT stm32h7s3xx_flash.ld)
 set(STM32_LINKER_OPTION  )
 
 # Set the project name
-set(CMAKE_PROJECT_NAME Nucelo_H7S3L8_Appli)
+set(CMAKE_PROJECT_NAME Nucleo_H7S3L8_Appli)
 project(${CMAKE_PROJECT_NAME})
 
 # Create an executable object type

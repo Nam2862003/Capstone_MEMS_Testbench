@@ -38,7 +38,7 @@ set(TARGET_FLAGS "${STM32_MCU_FLAGS} ${TOOLCHAIN_MULTILIBS}")
 
 set(CMAKE_GCCLIKE_WARNINGS_FLAGS " -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-parentheses-equality -Wno-reserved-identifier")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${TARGET_FLAGS} ${CMAKE_GCCLIKE_WARNINGS_FLAGS}")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fdata-sections -ffunction-sections ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fdata-sections -ffunction-sections -ftls-model=local-exec -fstack-usage")
 set(CMAKE_ASM_FLAGS "${CMAKE_C_FLAGS} -x assembler-with-cpp -MP")
 
 
