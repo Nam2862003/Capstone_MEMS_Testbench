@@ -31,7 +31,8 @@ class UDPSender:
         self.send(f"BUF,{size}")
     def set_sampling_rate(self, rate):
         self.send(f"ADC SAMP,{rate}")
-
+    def set_adc_resolution(self, resolution):
+        self.send(f"Resolution,{resolution}")
     # DAC control
     def start_gen(self):
         self.send("DAC START")
