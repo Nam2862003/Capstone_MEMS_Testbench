@@ -10,6 +10,7 @@ class UDPReceiver:
         # ---------------- SOCKET ----------------
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
         self.sock.bind(("0.0.0.0", self.port))
 
         print(f"[UDP] Listening on port {self.port}")
@@ -37,7 +38,7 @@ class UDPReceiver:
         while self.running:
 
             try:
-                data, addr = self.sock.recvfrom(4096)
+                data, addr = self.sock.recvfrom(65535)
 
                 # Convert raw bytes → uint32 array
                 samples = np.frombuffer(data, dtype=np.uint32)

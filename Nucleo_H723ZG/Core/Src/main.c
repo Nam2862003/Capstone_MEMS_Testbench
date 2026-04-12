@@ -60,7 +60,7 @@ TIM_HandleTypeDef htim6;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-#define Max_ADC_BUFFER_SIZE 4096 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+#define Max_ADC_BUFFER_SIZE 1472*2 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
 __attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
@@ -68,10 +68,10 @@ volatile uint8_t adc_running = 1;
 // volatile uint8_t dac_running = 1;
 
 // volatile uint8_t half_ready = 0;
-// volatile uint8_t full_ready = 0;
+// volatile uint8_t full_ready = 0;q
 
 // uint32_t last_send_time = 0;
-#define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+#define CHUNK_SIZE 1472 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -468,9 +468,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 25-1;
+  htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 11-1;
+  htim6.Init.Period = 109;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -723,61 +723,37 @@ void send_adc_data(uint32_t* data, uint32_t length)
         pbuf_free(p);
     }
 }
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
-{
-    if(hadc->Instance == ADC1)
-    {
-        for(uint32_t i=0;i<active_buffer_size/2;i+=CHUNK_SIZE)
-        {
-            send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+/* Triggered when the first 1472 samples are ready */
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
+    if(hadc->Instance == ADC1) {
+        // 1. Clean Cache for the first half so Ethernet DMA sees the new data
+        SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[0], CHUNK_SIZE * 4);
+        
+        // 2. Send using PBUF_REF (Zero-Copy)
+        struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * 4, PBUF_REF);
+        if(p != NULL) {
+            p->payload = (void *)&adc_buffer[0];
+            udp_send(upcb, p);
+            pbuf_free(p); // Only frees the wrapper, not your data
         }
-        // half_ready = 1;
     }
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
-{
-    if(hadc->Instance == ADC1)
-    {
-        for(uint32_t i=active_buffer_size/2;i<active_buffer_size;i+=CHUNK_SIZE)
-        {
-            send_adc_data(&adc_buffer[i],CHUNK_SIZE);
+/* Triggered when the second 1472 samples are ready */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+    if(hadc->Instance == ADC1) {
+        // 1. Clean Cache for the second half
+        SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[CHUNK_SIZE], CHUNK_SIZE * 4);
+        
+        // 2. Send second half
+        struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * 4, PBUF_REF);
+        if(p != NULL) {
+            p->payload = (void *)&adc_buffer[CHUNK_SIZE];
+            udp_send(upcb, p);
+            pbuf_free(p);
         }
-        // full_ready = 1;
     }
 }
-
-// static uint32_t half_index = 0;
-
-// void process_half_buffer(void)
-// {
-//     if (!half_ready) return;
-
-//     send_adc_data(&adc_buffer[half_index], CHUNK_SIZE);
-//     half_index += CHUNK_SIZE;
-
-//     if (half_index >= active_buffer_size/2)
-//     {
-//         half_index = 0;
-//         half_ready = 0;
-//     }
-// }
-
-// static uint32_t full_index = 0;
-
-// void process_full_buffer(void)
-// {
-//     if (!full_ready) return;
-
-//     send_adc_data(&adc_buffer[active_buffer_size/2 + full_index], CHUNK_SIZE);
-//     full_index += CHUNK_SIZE;
-
-//     if (full_index >= active_buffer_size/2)
-//     {
-//         full_index = 0;
-//         full_ready = 0;
-//     }
-// }
 
 
 /* USER CODE END 4 */
