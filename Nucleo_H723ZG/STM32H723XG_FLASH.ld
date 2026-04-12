@@ -254,10 +254,10 @@ SECTIONS
 .lwip_sec (NOLOAD) :
 {
   . = ALIGN(32);
-  *(.RxDecripSection)
+  *(.RxDescripSection)
 
   . = ALIGN(32);
-  *(.TxDecripSection)
+  *(.TxDescripSection)
 
   . = ALIGN(32);
   *(.Rx_PoolSection)

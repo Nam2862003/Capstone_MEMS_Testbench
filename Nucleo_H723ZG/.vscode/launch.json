@@ -8,8 +8,8 @@
 
             "servertype": "stlink",
 
-            "serverpath": "C:/Users/Admin/STM32CubeIDE_1.14.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.stlink-gdb-server.win32_2.1.100.202310302101/tools/bin/ST-LINK_gdbserver.exe",
-
+            "serverpath": "C:/ST/STM32CubeIDE_2.1.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.stlink-gdb-server.win32_2.2.400.202601091506/tools/bin/ST-LINK_gdbserver.exe",
+     
             "cwd": "${workspaceFolder}",
 
             "executable": "${workspaceFolder}/build/Debug/Capstone_MEMS_Testbench.elf",
