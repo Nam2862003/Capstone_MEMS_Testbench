@@ -28,6 +28,29 @@ QPushButton:pressed {
     background-color: #005a9e;
 }
 
+QPushButton:disabled {
+    background-color: #2a2a2a;
+    color: #777777;
+    border: 1px solid #3a3a3a;
+}
+
+/* =========================
+   LINE EDIT
+========================= */
+
+QLineEdit {
+    background-color: #1f1f1f;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+QLineEdit:disabled {
+    background-color: #1a1a1a;
+    color: #777777;
+    border: 1px solid #333;
+}
 
 /* =========================
    COMBO BOX
@@ -44,19 +67,23 @@ QComboBox:hover {
     border: 1px solid #0078d4;
 }
 
+QComboBox:disabled {
+    background-color: #1a1a1a;
+    color: #777777;
+    border: 1px solid #333;
+}
+
 QComboBox QAbstractItemView {
     background-color: #1f1f1f;
     color: #e0e0e0;
     selection-background-color: #0078d4;
 }
 
-/* ✅ Disabled items (this fixes your problem) */
 QComboBox QAbstractItemView::item:disabled {
     color: #777777;
     background-color: #1a1a1a;
 }
 
-/* optional: prevent highlight on disabled */
 QComboBox QAbstractItemView::item:disabled:selected {
     background: #1a1a1a;
 }
@@ -95,23 +122,19 @@ QTabBar::tab:disabled {
 
 /* =========================
    PR PAGE TAB COLOR
-   (Piezoresistive)
 ========================= */
 
 QTabWidget#PRTabs QTabBar::tab:selected {
     background: #2e8b57;
 }
 
-
 /* =========================
    PE PAGE TAB COLOR
-   (Piezoelectric)
 ========================= */
 
 QTabWidget#PETabs QTabBar::tab:selected {
     background: #c05621;
 }
-
 
 /* =========================
    LABELS
@@ -120,7 +143,6 @@ QTabWidget#PETabs QTabBar::tab:selected {
 QLabel {
     font-size: 15px;
 }
-
 
 /* =========================
    TITLE LABEL
@@ -131,6 +153,7 @@ QLabel#Title {
     font-weight: bold;
     color: #ffffff;
 }
+
 /* =========================
    GROUP BOX (PANELS)
 ========================= */
@@ -138,20 +161,22 @@ QLabel#Title {
 QGroupBox {
     border: 1px solid #555;
     border-radius: 8px;
-    margin-top: 15px;       /* 🔥 increase space for title */
-    padding-top: 10px;      /* space inside box */
+    margin-top: 15px;
+    padding-top: 10px;
 }
 
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    top: -3px;              /* 🔥 MOVE TITLE UP */
+    top: -3px;
     padding: 0 6px;
-    background-color: #121212;  /* 🔥 same as background to "cut" border */
+    background-color: #121212;
 }
+
 /* =========================
    GROUP CHECKBOXES
 ========================= */
+
 QCheckBox {
     font-size: 14px;
     spacing: 8px;
@@ -163,8 +188,9 @@ QCheckBox::indicator {
     background-color: #1f1f1f;
     border: 1px solid #444;
 }
+
 QCheckBox::indicator:checked {
-    background-color: #0078d4;   /* 🔥 blue fill */
+    background-color: #0078d4;
     border: 1px solid #0078d4;
 }
 """

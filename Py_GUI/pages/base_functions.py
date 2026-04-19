@@ -23,11 +23,11 @@ class BaseDAQPage(QWidget):
         self.tabs = QTabWidget()
         self.setup = QWidget()
         self.sweep = QWidget()
-        self.live_data = QWidget()
+        self.ext_sig = QWidget()
 
         self.tabs.addTab(self.setup, "Setup")
         self.tabs.addTab(self.sweep, " Internal Sweep (DDS)")
-        self.tabs.addTab(self.live_data, "External Signal Input (Function Generator)")
+        self.tabs.addTab(self.ext_sig, "External Signal Input (Function Generator)")
 
         layout.addWidget(self.tabs)
         self.setLayout(layout)
@@ -44,7 +44,12 @@ class BaseDAQPage(QWidget):
 
         self.build_setup_tab()
         self.build_sweep_tab()
-        
+        self.build_external_tab()
+
+        # Update timer
+        self.timer = pg.QtCore.QTimer()
+        self.timer.timeout.connect(self.update_plot)
+        self.timer.start(30)
     # ============================================
     # 1. SETUP TAB
     # ============================================
@@ -267,11 +272,97 @@ class BaseDAQPage(QWidget):
         # Set default labels immediately when GUI opens
         self.update_axis_constraints()
         self.update_plot_labels()
+    # =========================
+    # 3. External TAB (enable Function generator selection)
+    # =========================
+    def build_external_tab(self):
+        layout = QVBoxLayout()
+        # =========================================================
+        # Graph 1 controls
+        # =========================================================
+        self.ext_y_selector1 = QComboBox()
+        self.ext_y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
 
-        # Update timer
-        self.timer = pg.QtCore.QTimer()
-        self.timer.timeout.connect(self.update_plot)
-        self.timer.start(30)
+        self.ext_x_selector1 = QComboBox()
+        self.ext_x_selector1.addItems(["Time (s)", "Frequency (Hz)"])
+
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Graph 1 Y:"))
+        row1.addWidget(self.ext_y_selector1)
+        row1.addSpacing(20)
+        row1.addWidget(QLabel("X:"))
+        row1.addWidget(self.ext_x_selector1)
+        row1.addStretch()
+
+        # Graph 1 plot
+        self.ext_plot_widget1 = pg.PlotWidget()
+        self.ext_curve1 = self.ext_plot_widget1.plot(pen='y')
+
+        # =========================================================
+        # Graph 2 controls
+        # =========================================================
+        self.ext_y_selector2 = QComboBox()
+        self.ext_y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
+
+        self.ext_x_selector2 = QComboBox()
+        self.ext_x_selector2.addItems(["Time (s)", "Frequency (Hz)"])
+
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Graph 2 Y:"))
+        row2.addWidget(self.ext_y_selector2)
+        row2.addSpacing(20)
+        row2.addWidget(QLabel("X:"))
+        row2.addWidget(self.ext_x_selector2)
+        row2.addStretch()
+
+        # Graph 2 plot
+        self.ext_plot_widget2 = pg.PlotWidget()
+        self.ext_curve2 = self.ext_plot_widget2.plot(pen='r')
+
+        # Optional: make combo boxes a bit cleaner
+        self.ext_y_selector1.setFixedWidth(140)
+        self.ext_x_selector1.setFixedWidth(140)
+        self.ext_y_selector2.setFixedWidth(140)
+        self.ext_x_selector2.setFixedWidth(140)
+
+        # Link x axis
+        self.ext_plot_widget2.setXLink(self.ext_plot_widget1)
+
+        # Disable automatic SI scaling like (x0.001)
+        self.ext_plot_widget1.getAxis("bottom").enableAutoSIPrefix(False)
+        self.ext_plot_widget1.getAxis("left").enableAutoSIPrefix(False)
+        self.ext_plot_widget2.getAxis("bottom").enableAutoSIPrefix(False)
+        self.ext_plot_widget2.getAxis("left").enableAutoSIPrefix(False)
+
+        # Force same left axis width
+        self.ext_plot_widget1.getAxis("left").setWidth(60)
+        self.ext_plot_widget2.getAxis("left").setWidth(60)
+
+        # Add in the order you want
+        layout.addLayout(row1)
+        layout.addWidget(self.ext_plot_widget1, 1)
+        layout.addLayout(row2)
+        layout.addWidget(self.ext_plot_widget2, 1)
+
+        self.ext_sig.setLayout(layout)
+
+        # Connect axis selector signals
+        self.ext_y_selector1.currentTextChanged.connect(self.update_axis_constraints)
+        self.ext_x_selector1.currentTextChanged.connect(self.update_axis_constraints)
+        self.ext_y_selector2.currentTextChanged.connect(self.update_axis_constraints)
+        self.ext_x_selector2.currentTextChanged.connect(self.update_axis_constraints)
+
+        self.ext_y_selector1.currentTextChanged.connect(self.update_plot_labels)
+        self.ext_x_selector1.currentTextChanged.connect(self.update_plot_labels)
+        self.ext_y_selector2.currentTextChanged.connect(self.update_plot_labels)
+        self.ext_x_selector2.currentTextChanged.connect(self.update_plot_labels)
+
+        self.ext_y_selector1.currentTextChanged.connect(self.reset_time_axis)
+        self.ext_y_selector2.currentTextChanged.connect(self.reset_time_axis)
+
+        # Set default labels immediately when GUI opens
+        self.update_axis_constraints()
+        self.update_plot_labels()
 
     # =========================
     # ADC & DAC CONTROL (USB COMMUNICATION/UDP COMMANDS)
@@ -339,40 +430,85 @@ class BaseDAQPage(QWidget):
         if actuator == "Function Generator":
             # disable Sweep (DDS)
             self.tabs.setTabEnabled(SWEEP_TAB, False)
+            self.start_dac.setEnabled(False)
+            self.stop_dac.setEnabled(False)
+            self.start_freq.setEnabled(False)
+            self.stop_freq.setEnabled(False)
+            self.step_freq.setEnabled(False)
+            self.sweeping = False
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, True)
         elif actuator == "Direct Digital Synthesis (DDS)":
             # disable Live Data
             self.tabs.setTabEnabled(SWEEP_TAB, True)
+            self.start_dac.setEnabled(True)
+            self.stop_dac.setEnabled(True)
+            self.start_freq.setEnabled(True)
+            self.stop_freq.setEnabled(True)
+            self.step_freq.setEnabled(True)
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
         elif actuator == "STM32 DAC Output":
             # optional: allow both
             self.tabs.setTabEnabled(SWEEP_TAB, True)
-            self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, True)
+            self.start_dac.setEnabled(True)
+            self.stop_dac.setEnabled(True)
+            self.start_freq.setEnabled(True)
+            self.stop_freq.setEnabled(True)
+            self.step_freq.setEnabled(True)
+            self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
 
+    def get_active_plot_widgets(self):
+        actuator = self.actuator_selector.currentText()
+        if actuator == "Function Generator":
+            return {
+                "y1": self.ext_y_selector1,
+                "x1": self.ext_x_selector1,
+                "y2": self.ext_y_selector2,
+                "x2": self.ext_x_selector2,
+                "plot1": self.ext_plot_widget1,
+                "plot2": self.ext_plot_widget2,
+                "curve1": self.ext_curve1,
+                "curve2": self.ext_curve2,
+            }
+        else:
+            return {
+                "y1": self.y_selector1,
+                "x1": self.x_selector1,
+                "y2": self.y_selector2,
+                "x2": self.x_selector2,
+                "plot1": self.plot_widget1,
+                "plot2": self.plot_widget2,
+                "curve1": self.curve1,
+                "curve2": self.curve2,
+            }
     # Update axis options based on measurement method (e.g. disable Frequency x-axis for RMS)
     def update_axis_constraints(self):
-        # -------- GRAPH 1 --------
-        y1 = self.y_selector1.currentText()
-        model1 = self.x_selector1.model()
+        w = self.get_active_plot_widgets()
 
-        for i in range(self.x_selector1.count()):
-            text = self.x_selector1.itemText(i)
+        y1_box = w["y1"]
+        x1_box = w["x1"]
+        y2_box = w["y2"]
+        x2_box = w["x2"]
+
+        # -------- GRAPH 1 --------
+        y1 = y1_box.currentText()
+        model1 = x1_box.model()
+
+        for i in range(x1_box.count()):
+            text = x1_box.itemText(i)
 
             if y1 == "Raw ADC1 (V)":
-                # disable Frequency
                 if text == "Frequency (Hz)":
                     model1.item(i).setEnabled(False)
-                    if self.x_selector1.currentText() == "Frequency (Hz)":
-                        self.x_selector1.setCurrentText("Time (s)")
+                    if x1_box.currentText() == "Frequency (Hz)":
+                        x1_box.setCurrentText("Time (s)")
                 else:
                     model1.item(i).setEnabled(True)
 
             elif y1 in ["Amplitude (dB)", "Phase (deg)"]:
-                # disable Time
                 if text == "Time (s)":
                     model1.item(i).setEnabled(False)
-                    if self.x_selector1.currentText() == "Time (s)":
-                        self.x_selector1.setCurrentText("Frequency (Hz)")
+                    if x1_box.currentText() == "Time (s)":
+                        x1_box.setCurrentText("Frequency (Hz)")
                 else:
                     model1.item(i).setEnabled(True)
 
@@ -380,47 +516,55 @@ class BaseDAQPage(QWidget):
                 model1.item(i).setEnabled(True)
 
         # -------- GRAPH 2 --------
-        y2 = self.y_selector2.currentText()
-        model2 = self.x_selector2.model()
+        y2 = y2_box.currentText()
+        model2 = x2_box.model()
 
-        for i in range(self.x_selector2.count()):
-            text = self.x_selector2.itemText(i)
+        for i in range(x2_box.count()):
+            text = x2_box.itemText(i)
 
             if y2 == "Raw ADC2 (V)":
                 if text == "Frequency (Hz)":
                     model2.item(i).setEnabled(False)
-                    if self.x_selector2.currentText() == "Frequency (Hz)":
-                        self.x_selector2.setCurrentText("Time (s)")
+                    if x2_box.currentText() == "Frequency (Hz)":
+                        x2_box.setCurrentText("Time (s)")
                 else:
                     model2.item(i).setEnabled(True)
 
             elif y2 in ["Amplitude (dB)", "Phase (deg)"]:
                 if text == "Time (s)":
                     model2.item(i).setEnabled(False)
-                    if self.x_selector2.currentText() == "Time (s)":
-                        self.x_selector2.setCurrentText("Frequency (Hz)")
+                    if x2_box.currentText() == "Time (s)":
+                        x2_box.setCurrentText("Frequency (Hz)")
                 else:
                     model2.item(i).setEnabled(True)
 
             else:
                 model2.item(i).setEnabled(True)
-
     def update_plot_labels(self):
-        # -------- Graph 1 --------
-        x1 = self.x_selector1.currentText()
-        y1 = self.y_selector1.currentText()
+        w = self.get_active_plot_widgets()
 
-        self.plot_widget1.setTitle(f"{y1} vs {x1}")
-        self.plot_widget1.setLabel("bottom", x1)
-        self.plot_widget1.setLabel("left", y1)
+        y1_box = w["y1"]
+        x1_box = w["x1"]
+        y2_box = w["y2"]
+        x2_box = w["x2"]
+        plot1 = w["plot1"]
+        plot2 = w["plot2"]
+
+        # -------- Graph 1 --------
+        x1 = x1_box.currentText()
+        y1 = y1_box.currentText()
+
+        plot1.setTitle(f"{y1} vs {x1}")
+        plot1.setLabel("bottom", x1)
+        plot1.setLabel("left", y1)
 
         # -------- Graph 2 --------
-        x2 = self.x_selector2.currentText()
-        y2 = self.y_selector2.currentText()
+        x2 = x2_box.currentText()
+        y2 = y2_box.currentText()
 
-        self.plot_widget2.setTitle(f"{y2} vs {x2}")
-        self.plot_widget2.setLabel("bottom", x2)
-        self.plot_widget2.setLabel("left", y2)
+        plot2.setTitle(f"{y2} vs {x2}")
+        plot2.setLabel("bottom", x2)
+        plot2.setLabel("left", y2)
 
     def reset_time_axis(self):
         self.time_offset_1 = 0
@@ -429,17 +573,28 @@ class BaseDAQPage(QWidget):
     # PLOTTING
     # ========================================================
     def update_plot(self):
-        adc1, adc2 = self.receiver.get_data() # Code is on udp_receiver.py
+        w = self.get_active_plot_widgets()
+
+        y1_box = w["y1"]
+        x1_box = w["x1"]
+        y2_box = w["y2"]
+        x2_box = w["x2"]
+        plot1 = w["plot1"]
+        plot2 = w["plot2"]
+        curve1 = w["curve1"]
+        curve2 = w["curve2"]
+
+        adc1, adc2 = self.receiver.get_data()
         fs = float(self.sampling_rate_input.text())
-        if self.sweeping == True:
+
+        if self.sweeping:
             f_ref = self.current_freq
         else:
             f_ref = float(self.start_freq.text())
-        # -------- ADC → VOLTAGE --------
+
         adc1 = adc1 / 65535 * 3.3
         adc2 = adc2 / 65535 * 3.3
-        N = len(adc2)
-        # -------- Selection of measurement method and create plotting --------
+
         mode = self.mode_selector.currentText()
         if mode == "Lock-in Amplifier":
             amp, phase, _, _ = lock_in_amplifier(
@@ -452,88 +607,82 @@ class BaseDAQPage(QWidget):
             )
         elif mode == "Root Mean Square (RMS)":
             amp, v_sig, v_ref = compute_rms_amplitude(adc1, adc2)
-            phase = 0                  # RMS has NO phase
+            phase = 0
         elif mode == "Fast Fourier Transform (FFT)":
             amp, phase, _, _ = fft_amplitude_phase(adc1, adc2, fs, f_ref)
 
-        # -------- AXIS SELECTION --------
-        y1 = self.y_selector1.currentText()
-        x1 = self.x_selector1.currentText()
+        y1 = y1_box.currentText()
+        x1 = x1_box.currentText()
+        y2 = y2_box.currentText()
+        x2 = x2_box.currentText()
 
-        x2= self.x_selector2.currentText()
-        y2 = self.y_selector2.currentText()
-
-        #Sharing data 
         if self.last_freq != f_ref:
             self.sweep_freqs.append(f_ref)
             self.sweep_amp.append(amp)
             self.sweep_phase.append(np.degrees(phase))
             self.last_freq = f_ref
+
         freqs = np.array(self.sweep_freqs)
         amps = np.array(self.sweep_amp)
         phases = np.array(self.sweep_phase)
-        if len(freqs) == 0:
-            return
-        idx = np.argsort(freqs)
-        freqs = freqs[idx]
-        amps = amps[idx]
-        phases = phases[idx]
 
-        # ===============================
-        # X-AXIS LINK CONTROL (FIXED)
-        # ===============================
-        if x1 == "Frequency (Hz)" and x2 == "Frequency (Hz)":
-            # link only in frequency mode
-            self.plot_widget2.setXLink(self.plot_widget1)
-        elif x1 == "Time (s)" and x2 == "Time (s)":
-            # link only in time mode
-            self.plot_widget2.setXLink(self.plot_widget1)
+        # only require sweep data if one graph is using frequency
+        need_freq_data = (x1 == "Frequency (Hz)") or (x2 == "Frequency (Hz)")
+
+        if need_freq_data and len(freqs) == 0:
+            return
+
+        if len(freqs) > 0:
+            idx = np.argsort(freqs)
+            freqs = freqs[idx]
+            amps = amps[idx]
+            phases = phases[idx]
+
+        # X-link control
+        if x1 == x2:
+            plot2.setXLink(plot1)
         else:
-            # different modes → unlink
-            self.plot_widget1.setXLink(None)
-            self.plot_widget2.setXLink(None)
+            plot1.setXLink(None)
+            plot2.setXLink(None)
+
         # -------- GRAPH 1 --------
         if x1 == "Frequency (Hz)":
             if y1 == "Amplitude (dB)":
-                self.curve1.setData(freqs, amps)
+                curve1.setData(freqs, amps)
             elif y1 == "Phase (deg)":
-                self.curve1.setData(freqs, phases)
-            self.plot_widget1.enableAutoRange(axis='y', enable=True)
-        else:  # Time
+                curve1.setData(freqs, phases)
+            plot1.enableAutoRange(axis='y', enable=True)
+        else:
             time = np.arange(len(adc1)) / fs + self.time_offset_1
-            self.curve1.setData(time, adc1)
-            self.plot_widget1.enableAutoRange(axis='y', enable=False)
+            curve1.setData(time, adc1)
+            plot1.enableAutoRange(axis='y', enable=False)
 
-            if (self.adc_running == True):
+            if self.adc_running:
                 self.time_offset_1 += len(adc1) / fs
 
         # -------- GRAPH 2 --------
         if x2 == "Frequency (Hz)":
             if y2 == "Amplitude (dB)":
-                self.curve2.setData(freqs, amps)
+                curve2.setData(freqs, amps)
             elif y2 == "Phase (deg)":
-                self.curve2.setData(freqs, phases)
-            self.plot_widget2.enableAutoRange(axis='y', enable=True)  
-        else:  # Time
+                curve2.setData(freqs, phases)
+            plot2.enableAutoRange(axis='y', enable=True)
+        else:
             time = np.arange(len(adc2)) / fs + self.time_offset_2
-            self.curve2.setData(time, adc2)
-            self.plot_widget2.enableAutoRange(axis='y', enable=False)
+            curve2.setData(time, adc2)
+            plot2.enableAutoRange(axis='y', enable=False)
 
-            if (self.adc_running == True):
+            if self.adc_running:
                 self.time_offset_2 += len(adc2) / fs
 
-        # ===============================
-        # SWEEP STEP LOGIC
-        # ===============================
-        if self.sweeping == True:
+        # Sweep stepping only for DDS / internal sweep
+        if self.sweeping:
             step = float(self.step_freq.text())
             stop = float(self.stop_freq.text())
-            # move to next frequency
+
             self.current_freq += step
             if self.current_freq > stop:
-                
                 print("Sweep finished")
                 self.sweeping = False
             else:
-                # send to DDS / STM32
                 self.set_dac_freq(self.current_freq)

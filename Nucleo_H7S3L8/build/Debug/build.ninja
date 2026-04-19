@@ -81,7 +81,7 @@ build CMakeFiles/Nucleo_H7S3L8_Appli | ${cmake_ninja_workdir}CMakeFiles/Nucleo_H
 # Custom command for CMakeFiles\Nucleo_H7S3L8_Appli-complete
 
 build CMakeFiles/Nucleo_H7S3L8_Appli-complete Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-done | ${cmake_ninja_workdir}CMakeFiles/Nucleo_H7S3L8_Appli-complete ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-done: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E make_directory C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli-complete && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-done"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && cube-cmake -E make_directory C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli-complete && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-done"
   DESC = Completed 'Nucleo_H7S3L8_Appli'
   restat = 1
 
@@ -90,7 +90,7 @@ build CMakeFiles/Nucleo_H7S3L8_Appli-complete Appli/src/Nucleo_H7S3L8_Appli-stam
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-build
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe --build ."
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && cube-cmake --build ."
   DESC = Performing build step for 'Nucleo_H7S3L8_Appli'
 
 
@@ -98,7 +98,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build | ${cmake_ni
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-configure
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure: CUSTOM_COMMAND Appli/tmp/Nucleo_H7S3L8_Appli-cfgcmd.txt Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_TOOLCHAIN_FILE=C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/gcc-arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Debug -GNinja -S C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli -B C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && cube-cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_TOOLCHAIN_FILE=C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/gcc-arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Debug -GNinja -S C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli -B C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure"
   DESC = Performing configure step for 'Nucleo_H7S3L8_Appli'
   restat = 1
 
@@ -107,7 +107,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-configure | ${cmak
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-download
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-source_dirinfo.txt Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E echo_append && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && cube-cmake -E echo_append && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download"
   DESC = No download step for 'Nucleo_H7S3L8_Appli'
   restat = 1
 
@@ -116,7 +116,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download | ${cmake
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-install
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-build
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E echo_append"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\Appli\build && cube-cmake -E echo_append"
   DESC = No install step for 'Nucleo_H7S3L8_Appli'
 
 
@@ -124,7 +124,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-install | ${cmake_
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-mkdir
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir: CUSTOM_COMMAND
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -Dcfgdir= -P C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/tmp/Nucleo_H7S3L8_Appli-mkdirs.cmake && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && cube-cmake -Dcfgdir= -P C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/tmp/Nucleo_H7S3L8_Appli-mkdirs.cmake && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir"
   DESC = Creating directories for 'Nucleo_H7S3L8_Appli'
   restat = 1
 
@@ -133,7 +133,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-mkdir | ${cmake_ni
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-patch
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch-info.txt Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E echo_append && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && cube-cmake -E echo_append && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch"
   DESC = No patch step for 'Nucleo_H7S3L8_Appli'
   restat = 1
 
@@ -142,7 +142,7 @@ build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-patch | ${cmake_ni
 # Custom command for Appli\src\Nucleo_H7S3L8_Appli-stamp\Nucleo_H7S3L8_Appli-update
 
 build Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update | ${cmake_ninja_workdir}Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update: CUSTOM_COMMAND Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update-info.txt Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-download
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E echo_append && C:\Users\Admin\AppData\Local\stm32cube\bundles\cmake\4.0.1+st.3\bin\cmake.exe -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\STM32\Capstone_MEMS_Testbench\Nucleo_H7S3L8\build\Debug && cube-cmake -E echo_append && cube-cmake -E touch C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/Appli/src/Nucleo_H7S3L8_Appli-stamp/Nucleo_H7S3L8_Appli-update"
   DESC = No update step for 'Nucleo_H7S3L8_Appli'
   restat = 1
 
