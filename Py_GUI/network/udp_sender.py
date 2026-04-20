@@ -32,7 +32,14 @@ class UDPSender:
     def set_sampling_rate(self, rate):
         self.send(f"ADC SAMP,{rate}")
     def set_adc_resolution(self, resolution):
-        self.send(f"Resolution,{resolution}")
+        if resolution == "10-bit":
+            self.send("ADC RES,10")
+        elif resolution == "12-bit":
+            self.send("ADC RES,12")
+        elif resolution == "14-bit":
+            self.send("ADC RES,14")
+        elif resolution == "16-bit":
+            self.send("ADC RES,16")
     # DAC control
     def start_gen(self):
         self.send("DAC START")

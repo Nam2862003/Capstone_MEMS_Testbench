@@ -45,7 +45,7 @@ class BaseDAQPage(QWidget):
         self.build_setup_tab()
         self.build_sweep_tab()
         self.build_external_tab()
-
+        # self.receiver.set_resolution(self.resolution.currentText())
         # Update timer
         self.timer = pg.QtCore.QTimer()
         self.timer.timeout.connect(self.update_plot)
@@ -62,17 +62,19 @@ class BaseDAQPage(QWidget):
         # Sampling rate
         adc_group = QGroupBox("Signal Acquisition (ADC)")
         adc_layout = QFormLayout()
-        self.sampling_rate_input = QLineEdit("1000000")
+        self.sampling_rate_input = QLineEdit("2500000") 
         adc_layout.addRow("Sampling Rate (Hz):", self.sampling_rate_input)
 
         # Buffer size
         self.buffer = QComboBox()
         self.buffer.addItems(["512", "1024", "2048", "4096", "8192", "16384"])
+        self.buffer.setCurrentText("4096")
         adc_layout.addRow("Buffer Size:", self.buffer)
 
         #Resolution (optional, for display purposes only)
         self.resolution = QComboBox()
-        self.resolution.addItems(["12-bit", "16-bit"])
+        self.resolution.addItems(["10-bit", "12-bit", "14-bit", "16-bit"])
+        self.resolution.setCurrentText("16-bit")
         adc_layout.addRow("ADC Resolution:", self.resolution)
         
 
@@ -193,7 +195,7 @@ class BaseDAQPage(QWidget):
         self.y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector1 = QComboBox()
-        self.x_selector1.addItems(["Time (s)", "Frequency (Hz)"])
+        self.x_selector1.addItems(["Sample Index ", "Frequency (Hz)"])
 
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Graph 1 Y:"))
@@ -214,7 +216,7 @@ class BaseDAQPage(QWidget):
         self.y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector2 = QComboBox()
-        self.x_selector2.addItems(["Time (s)", "Frequency (Hz)"])
+        self.x_selector2.addItems(["Sample Index ", "Frequency (Hz)"])
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Graph 2 Y:"))
@@ -284,7 +286,7 @@ class BaseDAQPage(QWidget):
         self.ext_y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector1 = QComboBox()
-        self.ext_x_selector1.addItems(["Time (s)", "Frequency (Hz)"])
+        self.ext_x_selector1.addItems(["Sample Index ", "Frequency (Hz)"])
 
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Graph 1 Y:"))
@@ -305,7 +307,7 @@ class BaseDAQPage(QWidget):
         self.ext_y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector2 = QComboBox()
-        self.ext_x_selector2.addItems(["Time (s)", "Frequency (Hz)"])
+        self.ext_x_selector2.addItems(["Sample Index ", "Frequency (Hz)"])
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Graph 2 Y:"))
@@ -369,8 +371,11 @@ class BaseDAQPage(QWidget):
     # =========================
     # ADC control
     def set_buffer(self, value):
+        if self.adc_running:
+            self.sender.stop_aq()
+            self.adc_running = False
         self.sender.set_buffer(value)
-
+        self.receiver.set_buffer_size(int(value))
     def start_acquisition(self):
         self.sender.start_aq()
         self.adc_running= True
@@ -382,10 +387,19 @@ class BaseDAQPage(QWidget):
     def set_sampling_rate(self, value=None):
         if value is None:
             value = self.sampling_rate_input.text()
+
+        if self.adc_running:
+            self.sender.stop_aq()
+            self.adc_running = False
+
         self.sender.set_sampling_rate(value)
 
     def set_resolution(self, value):
+        if self.adc_running:
+            self.sender.stop_aq()
+            self.adc_running = False
         self.sender.set_adc_resolution(value)
+        self.receiver.set_resolution(value)
 
     # DAC control
     def start_generation(self):
@@ -500,14 +514,14 @@ class BaseDAQPage(QWidget):
                 if text == "Frequency (Hz)":
                     model1.item(i).setEnabled(False)
                     if x1_box.currentText() == "Frequency (Hz)":
-                        x1_box.setCurrentText("Time (s)")
+                        x1_box.setCurrentText("Sample Index ")
                 else:
                     model1.item(i).setEnabled(True)
 
             elif y1 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Time (s)":
+                if text == "Sample Index ":
                     model1.item(i).setEnabled(False)
-                    if x1_box.currentText() == "Time (s)":
+                    if x1_box.currentText() == "Sample Index ":
                         x1_box.setCurrentText("Frequency (Hz)")
                 else:
                     model1.item(i).setEnabled(True)
@@ -526,14 +540,14 @@ class BaseDAQPage(QWidget):
                 if text == "Frequency (Hz)":
                     model2.item(i).setEnabled(False)
                     if x2_box.currentText() == "Frequency (Hz)":
-                        x2_box.setCurrentText("Time (s)")
+                        x2_box.setCurrentText("Sample Index ")
                 else:
                     model2.item(i).setEnabled(True)
 
             elif y2 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Time (s)":
+                if text == "Sample Index ":
                     model2.item(i).setEnabled(False)
-                    if x2_box.currentText() == "Time (s)":
+                    if x2_box.currentText() == "Sample Index ":
                         x2_box.setCurrentText("Frequency (Hz)")
                 else:
                     model2.item(i).setEnabled(True)
@@ -584,16 +598,19 @@ class BaseDAQPage(QWidget):
         curve1 = w["curve1"]
         curve2 = w["curve2"]
 
-        adc1, adc2 = self.receiver.get_data()
-        fs = float(self.sampling_rate_input.text())
+        # raw1, raw2 = self.receiver.get_data()
+        adc1, adc2 = self.receiver.get_data_volts(vref=3.3)
+        # print("RAW ADC1 min/max:", np.min(raw1), np.max(raw1))
+        # print("RAW ADC2 min/max:", np.min(raw2), np.max(raw2))
+        # print("VOLT ADC1 min/max:", np.min(adc1), np.max(adc1))
+        # print("VOLT ADC2 min/max:", np.min(adc2), np.max(adc2))
+        # print("Resolution:", self.resolution.currentText())
 
+        fs = float(self.sampling_rate_input.text())
         if self.sweeping:
             f_ref = self.current_freq
         else:
             f_ref = float(self.start_freq.text())
-
-        adc1 = adc1 / 65535 * 3.3
-        adc2 = adc2 / 65535 * 3.3
 
         mode = self.mode_selector.currentText()
         if mode == "Lock-in Amplifier":
@@ -653,8 +670,8 @@ class BaseDAQPage(QWidget):
                 curve1.setData(freqs, phases)
             plot1.enableAutoRange(axis='y', enable=True)
         else:
-            time = np.arange(len(adc1)) / fs + self.time_offset_1
-            curve1.setData(time, adc1)
+            x = np.arange(len(adc1))
+            curve1.setData(x, adc1)
             plot1.enableAutoRange(axis='y', enable=False)
 
             if self.adc_running:
@@ -668,8 +685,8 @@ class BaseDAQPage(QWidget):
                 curve2.setData(freqs, phases)
             plot2.enableAutoRange(axis='y', enable=True)
         else:
-            time = np.arange(len(adc2)) / fs + self.time_offset_2
-            curve2.setData(time, adc2)
+            x = np.arange(len(adc2))
+            curve2.setData(x, adc2)
             plot2.enableAutoRange(axis='y', enable=False)
 
             if self.adc_running:
