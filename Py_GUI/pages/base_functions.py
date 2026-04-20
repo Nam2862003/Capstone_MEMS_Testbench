@@ -195,7 +195,7 @@ class BaseDAQPage(QWidget):
         self.y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector1 = QComboBox()
-        self.x_selector1.addItems(["Sample Index ", "Frequency (Hz)"])
+        self.x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
 
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Graph 1 Y:"))
@@ -203,12 +203,18 @@ class BaseDAQPage(QWidget):
         row1.addSpacing(20)
         row1.addWidget(QLabel("X:"))
         row1.addWidget(self.x_selector1)
+
+        self.cursor_checkbox = QCheckBox("Cursor")
+        self.cursor_checkbox.setChecked(True)
+        row1.addSpacing(20)
+        row1.addWidget(self.cursor_checkbox)
         row1.addStretch()
 
         # Graph 1 plot
         self.plot_widget1 = pg.PlotWidget()
         self.curve1 = self.plot_widget1.plot(pen='y')
-
+        self.cursor1 = self.setup_cursor(self.plot_widget1, self.curve1)
+        self.cursor_checkbox.toggled.connect(self.toggle_sweep_cursor)
         # =========================================================
         # Graph 2 controls
         # =========================================================
@@ -216,7 +222,7 @@ class BaseDAQPage(QWidget):
         self.y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector2 = QComboBox()
-        self.x_selector2.addItems(["Sample Index ", "Frequency (Hz)"])
+        self.x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Graph 2 Y:"))
@@ -229,6 +235,7 @@ class BaseDAQPage(QWidget):
         # Graph 2 plot
         self.plot_widget2 = pg.PlotWidget()
         self.curve2 = self.plot_widget2.plot(pen='r')
+        self.cursor2 = self.setup_cursor(self.plot_widget2, self.curve2)
 
         # Optional: make combo boxes a bit cleaner
         self.y_selector1.setFixedWidth(140)
@@ -286,7 +293,7 @@ class BaseDAQPage(QWidget):
         self.ext_y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector1 = QComboBox()
-        self.ext_x_selector1.addItems(["Sample Index ", "Frequency (Hz)"])
+        self.ext_x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
 
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Graph 1 Y:"))
@@ -299,7 +306,7 @@ class BaseDAQPage(QWidget):
         # Graph 1 plot
         self.ext_plot_widget1 = pg.PlotWidget()
         self.ext_curve1 = self.ext_plot_widget1.plot(pen='y')
-
+        self.ext_cursor1 = self.setup_cursor(self.ext_plot_widget1, self.ext_curve1)
         # =========================================================
         # Graph 2 controls
         # =========================================================
@@ -307,7 +314,7 @@ class BaseDAQPage(QWidget):
         self.ext_y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector2 = QComboBox()
-        self.ext_x_selector2.addItems(["Sample Index ", "Frequency (Hz)"])
+        self.ext_x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel("Graph 2 Y:"))
@@ -320,7 +327,7 @@ class BaseDAQPage(QWidget):
         # Graph 2 plot
         self.ext_plot_widget2 = pg.PlotWidget()
         self.ext_curve2 = self.ext_plot_widget2.plot(pen='r')
-
+        self.ext_cursor2 = self.setup_cursor(self.ext_plot_widget2, self.ext_curve2)
         # Optional: make combo boxes a bit cleaner
         self.ext_y_selector1.setFixedWidth(140)
         self.ext_x_selector1.setFixedWidth(140)
@@ -366,6 +373,97 @@ class BaseDAQPage(QWidget):
         self.update_axis_constraints()
         self.update_plot_labels()
 
+# =========================
+# 4. Cursor control
+# =========================
+    def setup_cursor(self, plot_widget, curve):
+        green = (0, 255, 120)
+
+        green_pen = pg.mkPen(color=green, width=1.5)
+
+        v_line = pg.InfiniteLine(angle=90, movable=False, pen=green_pen)
+        h_line = pg.InfiniteLine(angle=0, movable=False, pen=green_pen)
+
+        plot_widget.addItem(v_line, ignoreBounds=True)
+        plot_widget.addItem(h_line, ignoreBounds=True)
+
+        label = pg.TextItem(anchor=(0, 1), color=green)
+        plot_widget.addItem(label, ignoreBounds=True)
+
+        point_marker = pg.ScatterPlotItem(
+            size=8,
+            brush=pg.mkBrush(green),
+            pen=pg.mkPen(green)
+        )
+        plot_widget.addItem(point_marker, ignoreBounds=True)
+
+        def mouse_moved(evt):
+            pos = evt[0]   # SignalProxy sends a tuple
+
+            if not plot_widget.sceneBoundingRect().contains(pos):
+                return
+
+            mouse_point = plot_widget.plotItem.vb.mapSceneToView(pos)
+            mouse_x = mouse_point.x()
+
+            x_data, y_data = curve.getData()
+
+            if x_data is None or y_data is None:
+                return
+            if len(x_data) == 0 or len(y_data) == 0:
+                return
+
+            x_arr = np.asarray(x_data)
+            y_arr = np.asarray(y_data)
+
+            valid = np.isfinite(x_arr) & np.isfinite(y_arr)
+            if not np.any(valid):
+                return
+
+            x_arr = x_arr[valid]
+            y_arr = y_arr[valid]
+
+            idx = np.argmin(np.abs(x_arr - mouse_x))
+            x = x_arr[idx]
+            y = y_arr[idx]
+
+            v_line.setPos(x)
+            h_line.setPos(y)
+            point_marker.setData([x], [y])
+
+            label.setPos(x, y)
+            label.setText(f"x = {x:.2f}\ny = {y:.4f}")
+
+        proxy = pg.SignalProxy(
+            plot_widget.scene().sigMouseMoved,
+            rateLimit=60,
+            slot=mouse_moved
+        )
+
+        return {
+            "v_line": v_line,
+            "h_line": h_line,
+            "label": label,
+            "point_marker": point_marker,
+            "proxy": proxy,
+        }
+    
+    def set_cursor_visible(self, cursor_dict, visible):
+        if cursor_dict is None:
+            return
+
+        cursor_dict["v_line"].setVisible(visible)
+        cursor_dict["h_line"].setVisible(visible)
+        cursor_dict["label"].setVisible(visible)
+        cursor_dict["point_marker"].setVisible(visible)
+
+    def toggle_sweep_cursor(self, checked):
+        self.set_cursor_visible(self.cursor1, checked)
+        self.set_cursor_visible(self.cursor2, checked)
+
+    def toggle_external_cursor(self, checked):
+        self.set_cursor_visible(self.ext_cursor1, checked)
+        self.set_cursor_visible(self.ext_cursor2, checked)
     # =========================
     # ADC & DAC CONTROL (USB COMMUNICATION/UDP COMMANDS)
     # =========================
@@ -514,14 +612,14 @@ class BaseDAQPage(QWidget):
                 if text == "Frequency (Hz)":
                     model1.item(i).setEnabled(False)
                     if x1_box.currentText() == "Frequency (Hz)":
-                        x1_box.setCurrentText("Sample Index ")
+                        x1_box.setCurrentText("Sample Index")
                 else:
                     model1.item(i).setEnabled(True)
 
             elif y1 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Sample Index ":
+                if text == "Sample Index":
                     model1.item(i).setEnabled(False)
-                    if x1_box.currentText() == "Sample Index ":
+                    if x1_box.currentText() == "Sample Index":
                         x1_box.setCurrentText("Frequency (Hz)")
                 else:
                     model1.item(i).setEnabled(True)
@@ -540,14 +638,14 @@ class BaseDAQPage(QWidget):
                 if text == "Frequency (Hz)":
                     model2.item(i).setEnabled(False)
                     if x2_box.currentText() == "Frequency (Hz)":
-                        x2_box.setCurrentText("Sample Index ")
+                        x2_box.setCurrentText("Sample Index")
                 else:
                     model2.item(i).setEnabled(True)
 
             elif y2 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Sample Index ":
+                if text == "Sample Index":
                     model2.item(i).setEnabled(False)
-                    if x2_box.currentText() == "Sample Index ":
+                    if x2_box.currentText() == "Sample Index":
                         x2_box.setCurrentText("Frequency (Hz)")
                 else:
                     model2.item(i).setEnabled(True)
