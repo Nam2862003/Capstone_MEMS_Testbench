@@ -60,7 +60,7 @@ TIM_HandleTypeDef htim6;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-#define Max_ADC_BUFFER_SIZE 1472*2 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+#define Max_ADC_BUFFER_SIZE 4096 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
 __attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
@@ -71,7 +71,7 @@ volatile uint8_t adc_running = 1;
 // volatile uint8_t full_ready = 0;q
 
 // uint32_t last_send_time = 0;
-#define CHUNK_SIZE 1472 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+#define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -580,8 +580,7 @@ static void MX_GPIO_Init(void)
 void stop_adc_acquisition(void)
 {
     HAL_TIM_Base_Stop(&htim6);
-    // HAL_ADC_Stop_DMA(&hadc1);
-    // HAL_ADC_Stop(&hadc1);
+    HAL_ADCEx_MultiModeStop_DMA(&hadc1);
     HAL_ADC_Stop(&hadc2);
     adc_running = 0;
 }
@@ -612,37 +611,91 @@ void update_buffer_size(uint32_t new_size)
 }
 void update_adc_sampling_rate(uint32_t fs)
 {
-    if(fs < 1000 || fs > 2000000)
+    if(fs < 1000 || fs > 2500000)
         return;
 
     uint32_t pclk = HAL_RCC_GetPCLK1Freq();
-    uint32_t timer_clk;
-    if ((RCC->D2CFGR & RCC_D2CFGR_D2PPRE1) != 0)
-    {
-        timer_clk = pclk * 2;  // prescaler > 1 → timer clock doubled
-    }
-    else
-    {
-        timer_clk = pclk;      // prescaler = 1 → no doubling
-    } // TIM6 is on APB1, and APB1 timer clocks are typically doubled when APB1 prescaler is not 1
-    printf("PCLK1 = %lu Hz\n", HAL_RCC_GetPCLK1Freq());
-    printf("Timer clk = %lu Hz\n", timer_clk);
+    uint32_t timer_clk = ((RCC->D2CFGR & RCC_D2CFGR_D2PPRE1) != 0) ? (pclk * 2) : pclk;
 
-    uint32_t prescaler = 24;          // (25-1)
-    uint32_t period;
-
-    period = (timer_clk / ((prescaler + 1) * fs)) - 1;
-
+    uint32_t period = (timer_clk / fs) - 1;
     if(period > 0xFFFF)
         return;
-    if(adc_running == 1)
-    {
-      stop_adc_acquisition();
-    }
+
+    uint8_t was_running = adc_running;
+
+    if(was_running)
+        stop_adc_acquisition();
+
     __HAL_TIM_SET_AUTORELOAD(&htim6, period);
     __HAL_TIM_SET_COUNTER(&htim6, 0);
-  // printf("Fs updated: %lu Hz (ARR=%lu) \r\n", fs, period);
+    // if(was_running)
+    //     start_adc_acquisition();
+}
+void update_adc_resolution(uint32_t bits)
+{
+    if(bits != 10 && bits != 12 && bits != 14 && bits != 16)
+        return;
 
+    uint32_t res;
+    switch(bits)
+    {
+        case 10: res = ADC_RESOLUTION_10B; break;
+        case 12: res = ADC_RESOLUTION_12B; break;
+        case 14: res = ADC_RESOLUTION_14B; break;
+        case 16: res = ADC_RESOLUTION_16B; break;
+        default: return;
+    }
+
+    uint8_t was_running = adc_running;
+
+    if(was_running)
+        stop_adc_acquisition();
+
+    HAL_ADC_DeInit(&hadc1);
+    HAL_ADC_DeInit(&hadc2);
+
+    hadc1.Init.Resolution = res;
+    hadc2.Init.Resolution = res;
+
+    if (HAL_ADC_Init(&hadc1) != HAL_OK)
+        Error_Handler();
+
+    if (HAL_ADC_Init(&hadc2) != HAL_OK)
+        Error_Handler();
+
+    ADC_MultiModeTypeDef multimode = {0};
+    multimode.Mode = ADC_DUALMODE_REGSIMULT;
+    multimode.DualModeData = ADC_DUALMODEDATAFORMAT_32_10_BITS;
+    multimode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_1CYCLE;
+
+    if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+        Error_Handler();
+
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    sConfig.Channel = ADC_CHANNEL_5;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
+    sConfig.SingleDiff = ADC_SINGLE_ENDED;
+    sConfig.OffsetNumber = ADC_OFFSET_NONE;
+    sConfig.Offset = 0;
+    sConfig.OffsetSignedSaturation = DISABLE;
+
+    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+        Error_Handler();
+
+    sConfig.Channel = ADC_CHANNEL_15;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+    sConfig.SingleDiff = ADC_SINGLE_ENDED;
+    sConfig.OffsetNumber = ADC_OFFSET_NONE;
+    sConfig.Offset = 0;
+    sConfig.OffsetSignedSaturation = DISABLE;
+
+    if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+        Error_Handler();
+
+    /* keep stopped until Start ADC is pressed */
 }
 void udp_receive_callback(void *arg,
                           struct udp_pcb *pcb,
@@ -696,6 +749,12 @@ void parse_command(char *cmd)
             
           }
     }
+    else if (strncmp(cmd, "ADC RES", 7) == 0)
+    {
+        uint32_t bits;
+        sscanf(cmd, "ADC RES,%lu", &bits);
+        update_adc_resolution(bits);
+    }
 }
 void send_adc_data(uint32_t* data, uint32_t length)
 {
@@ -723,34 +782,48 @@ void send_adc_data(uint32_t* data, uint32_t length)
         pbuf_free(p);
     }
 }
-/* Triggered when the first 1472 samples are ready */
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
-    if(hadc->Instance == ADC1) {
-        // 1. Clean Cache for the first half so Ethernet DMA sees the new data
-        SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[0], CHUNK_SIZE * 4);
-        
-        // 2. Send using PBUF_REF (Zero-Copy)
-        struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * 4, PBUF_REF);
-        if(p != NULL) {
-            p->payload = (void *)&adc_buffer[0];
-            udp_send(upcb, p);
-            pbuf_free(p); // Only frees the wrapper, not your data
+/* Triggered when the first half of DMA buffer is ready */
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if (hadc->Instance == ADC1)
+    {
+        for (uint32_t i = 0; i < active_buffer_size / 2; i += CHUNK_SIZE)
+        {
+            SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[i], CHUNK_SIZE * sizeof(uint32_t));
+
+            struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * sizeof(uint32_t), PBUF_REF);
+            if (p != NULL)
+            {
+                p->payload = (void *)&adc_buffer[i];
+                p->len     = CHUNK_SIZE * sizeof(uint32_t);
+                p->tot_len = p->len;
+
+                udp_send(upcb, p);
+                pbuf_free(p);
+            }
         }
     }
 }
 
-/* Triggered when the second 1472 samples are ready */
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-    if(hadc->Instance == ADC1) {
-        // 1. Clean Cache for the second half
-        SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[CHUNK_SIZE], CHUNK_SIZE * 4);
-        
-        // 2. Send second half
-        struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * 4, PBUF_REF);
-        if(p != NULL) {
-            p->payload = (void *)&adc_buffer[CHUNK_SIZE];
-            udp_send(upcb, p);
-            pbuf_free(p);
+/* Triggered when the second half of DMA buffer is ready */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    if (hadc->Instance == ADC1)
+    {
+        for (uint32_t i = active_buffer_size / 2; i < active_buffer_size; i += CHUNK_SIZE)
+        {
+            SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[i], CHUNK_SIZE * sizeof(uint32_t));
+
+            struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * sizeof(uint32_t), PBUF_REF);
+            if (p != NULL)
+            {
+                p->payload = (void *)&adc_buffer[i];
+                p->len     = CHUNK_SIZE * sizeof(uint32_t);
+                p->tot_len = p->len;
+
+                udp_send(upcb, p);
+                pbuf_free(p);
+            }
         }
     }
 }

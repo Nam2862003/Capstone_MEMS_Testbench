@@ -17,7 +17,6 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 /* USER CODE BEGIN Includes */
@@ -62,7 +61,7 @@
   */
 void HAL_MspInit(void)
 {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+RCC_OscInitTypeDef RCC_OscInitStruct = {0};
 
   /* Configure the system Power Supply */
 
@@ -114,20 +113,20 @@ void HAL_MspInit(void)
 }
 
 /**
-* @brief XSPI MSP Initialization
-* This function configures the hardware resources used in this example
-* @param hxspi: XSPI handle pointer
-* @retval None
-*/
+  * @brief XSPI MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hxspi: XSPI handle pointer
+  * @retval None
+  */
 void HAL_XSPI_MspInit(XSPI_HandleTypeDef* hxspi)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
   if(hxspi->Instance==XSPI2)
   {
-  /* USER CODE BEGIN XSPI2_MspInit 0 */
+    /* USER CODE BEGIN XSPI2_MspInit 0 */
 
-  /* USER CODE END XSPI2_MspInit 0 */
+    /* USER CODE END XSPI2_MspInit 0 */
 
   /** Initializes the peripherals clock
   */
@@ -165,27 +164,27 @@ void HAL_XSPI_MspInit(XSPI_HandleTypeDef* hxspi)
     GPIO_InitStruct.Alternate = GPIO_AF9_XSPIM_P2;
     HAL_GPIO_Init(GPION, &GPIO_InitStruct);
 
-  /* USER CODE BEGIN XSPI2_MspInit 1 */
+    /* USER CODE BEGIN XSPI2_MspInit 1 */
 
-  /* USER CODE END XSPI2_MspInit 1 */
+    /* USER CODE END XSPI2_MspInit 1 */
 
   }
 
 }
 
 /**
-* @brief XSPI MSP De-Initialization
-* This function freeze the hardware resources used in this example
-* @param hxspi: XSPI handle pointer
-* @retval None
-*/
+  * @brief XSPI MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hxspi: XSPI handle pointer
+  * @retval None
+  */
 void HAL_XSPI_MspDeInit(XSPI_HandleTypeDef* hxspi)
 {
   if(hxspi->Instance==XSPI2)
   {
-  /* USER CODE BEGIN XSPI2_MspDeInit 0 */
+    /* USER CODE BEGIN XSPI2_MspDeInit 0 */
 
-  /* USER CODE END XSPI2_MspDeInit 0 */
+    /* USER CODE END XSPI2_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_XSPIM_CLK_DISABLE();
     __HAL_RCC_XSPI2_CLK_DISABLE();
@@ -207,9 +206,9 @@ void HAL_XSPI_MspDeInit(XSPI_HandleTypeDef* hxspi)
                           |GPIO_PIN_10|GPIO_PIN_9|GPIO_PIN_2|GPIO_PIN_6
                           |GPIO_PIN_8|GPIO_PIN_4|GPIO_PIN_5);
 
-  /* USER CODE BEGIN XSPI2_MspDeInit 1 */
+    /* USER CODE BEGIN XSPI2_MspDeInit 1 */
 
-  /* USER CODE END XSPI2_MspDeInit 1 */
+    /* USER CODE END XSPI2_MspDeInit 1 */
   }
 
 }
