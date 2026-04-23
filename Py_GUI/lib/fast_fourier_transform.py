@@ -26,6 +26,6 @@ def fft_amplitude_phase(adc1, adc2, fs, f_ref):
     gain = A2 / (A1 + 1e-12)
     amplitude_dB = 20 * np.log10(gain)
 
-    phase = np.angle(fft2[idx]) - np.angle(fft1[idx])
+    phase = np.angle(np.exp(1j * (np.angle(fft2[idx]) - np.angle(fft1[idx]))))
 
     return amplitude_dB, phase, A2, A1

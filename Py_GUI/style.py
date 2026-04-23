@@ -193,4 +193,23 @@ QCheckBox::indicator:checked {
     background-color: #0078d4;
     border: 1px solid #0078d4;
 }
+
+QCheckBox#CursorToggle::indicator {
+    width: 18px;
+    height: 18px;
+    background-color: #121212;
+    border: 2px solid #7a7a7a;
+}
+
+QCheckBox#CursorToggle::indicator:unchecked {
+    image: none;
+    background-color: #121212;
+    border: 2px solid #7a7a7a;
+}
+
+QCheckBox#CursorToggle::indicator:checked {
+    background-color: #121212;
+    border: 2px solid #7a7a7a;
+    image: url(assets/cursor-check.svg);
+}
 """
