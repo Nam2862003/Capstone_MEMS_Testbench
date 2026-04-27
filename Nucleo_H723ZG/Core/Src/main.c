@@ -43,6 +43,32 @@
 #else
 #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #endif
+
+#define DDS_CS_GPIO_Port GPIOD
+#define DDS_CS_Pin GPIO_PIN_14
+#define PE_PR_SEL_GPIO_Port GPIOE
+#define PE_PR_SEL_Pin GPIO_PIN_9
+#define ACTSRC_GPIO_Port GPIOE
+#define ACTSRC_Pin GPIO_PIN_11
+#define BNC_ADC_GPIO_Port GPIOE
+#define BNC_ADC_Pin GPIO_PIN_14
+#define PE_GAIN_A0_GPIO_Port GPIOE
+#define PE_GAIN_A0_Pin GPIO_PIN_13
+#define PE_GAIN_A1_GPIO_Port GPIOG
+#define PE_GAIN_A1_Pin GPIO_PIN_14
+#define AD9833_CTRL_B28 0x2000U
+#define AD9833_CTRL_RESET 0x0100U
+#define AD9833_CTRL_SLEEP1 0x0080U
+#define AD9833_FREQ0_REG 0x4000U
+#define AD9833_MCLK_HZ 25000000.0
+
+#define BOARD_MODE_PE 0U
+#define BOARD_MODE_PR 1U
+
+#define ACTUATOR_MODE_NONE 0U
+#define ACTUATOR_MODE_DDS 1U
+#define ACTUATOR_MODE_FUNCTION_GENERATOR 2U
+#define ACTUATOR_MODE_STM32_DAC 3U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,6 +100,11 @@ volatile uint8_t adc_running = 1;
 
 // uint32_t last_send_time = 0;
 #define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+volatile uint8_t dds_running = 0;
+volatile uint32_t dds_frequency_hz = 1000;
+volatile uint8_t board_mode = BOARD_MODE_PE;
+volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
+volatile uint8_t pe_gain_index = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,6 +131,13 @@ void parse_command(char *cmd);
 void update_adc_buffer_size(uint32_t new_size);
 void stop_adc_acquisition(void);
 void start_adc_acquisition(void);
+void dds_init(void);
+void dds_start(void);
+void dds_stop(void);
+void dds_set_frequency(float freq_hz);
+void set_board_mode(uint8_t mode);
+void set_actuator_mode(uint8_t mode);
+void set_pe_gain(uint8_t gain_index);
 // void process_half_buffer(void);
 // void process_full_buffer(void);
 /* USER CODE END PFP */
@@ -182,6 +220,7 @@ int main(void)
   MX_ADC1_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+  dds_init();
   // generate_sine_table();
   // HAL_DAC_Start_DMA(&hdac1,
   //                 DAC_CHANNEL_1,
@@ -220,6 +259,10 @@ int main(void)
   {
       Error_Handler();
   }
+
+  set_board_mode(BOARD_MODE_PE);
+  set_actuator_mode(ACTUATOR_MODE_DDS);
+  set_pe_gain(0U);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -667,6 +710,144 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void dds_write_word(uint16_t word)
+{
+    uint8_t tx[2];
+
+    tx[0] = (uint8_t)((word >> 8) & 0xFF);
+    tx[1] = (uint8_t)(word & 0xFF);
+
+    HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_SET);
+}
+
+void dds_apply_frequency_word(uint32_t freq_word)
+{
+    uint16_t lsb_word = AD9833_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
+    uint16_t msb_word = AD9833_FREQ0_REG | (uint16_t)((freq_word >> 14) & 0x3FFFU);
+
+    dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET);
+    dds_write_word(lsb_word);
+    dds_write_word(msb_word);
+
+    if (dds_running)
+    {
+        dds_write_word(AD9833_CTRL_B28);
+    }
+    else
+    {
+        dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+    }
+}
+
+void dds_init(void)
+{
+    HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_SET);
+    dds_running = 0;
+    dds_apply_frequency_word(0);
+    dds_set_frequency((float)dds_frequency_hz);
+}
+
+void dds_start(void)
+{
+    dds_running = 1;
+    dds_set_frequency((float)dds_frequency_hz);
+}
+
+void dds_stop(void)
+{
+    dds_running = 0;
+    dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+}
+
+void dds_set_frequency(float freq_hz)
+{
+    if (freq_hz < 0.0f)
+    {
+        return;
+    }
+
+    double tuning = ((double)freq_hz * 268435456.0) / AD9833_MCLK_HZ;
+    if (tuning < 0.0)
+    {
+        tuning = 0.0;
+    }
+    if (tuning > 268435455.0)
+    {
+        tuning = 268435455.0;
+    }
+
+    dds_frequency_hz = (uint32_t)(freq_hz + 0.5f);
+    dds_apply_frequency_word((uint32_t)(tuning + 0.5));
+}
+
+void set_board_mode(uint8_t mode)
+{
+    board_mode = mode;
+
+    if (mode == BOARD_MODE_PR)
+    {
+        HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_SET);
+    }
+    else
+    {
+        board_mode = BOARD_MODE_PE;
+        HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
+    }
+}
+
+void set_actuator_mode(uint8_t mode)
+{
+    actuator_mode = mode;
+
+    switch (mode)
+    {
+        case ACTUATOR_MODE_FUNCTION_GENERATOR:
+            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+            break;
+
+        case ACTUATOR_MODE_DDS:
+            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+            break;
+
+        case ACTUATOR_MODE_STM32_DAC:
+        default:
+            actuator_mode = ACTUATOR_MODE_STM32_DAC;
+            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+            break;
+    }
+}
+
+void set_pe_gain(uint8_t gain_index)
+{
+    uint8_t d3_state;
+    uint8_t d2_state;
+
+    if (gain_index > 3U)
+    {
+        return;
+    }
+
+    pe_gain_index = gain_index;
+    d3_state = (uint8_t)((gain_index >> 1) & 0x01U);
+    d2_state = (uint8_t)(gain_index & 0x01U);
+
+    HAL_GPIO_WritePin(
+        PE_GAIN_A0_GPIO_Port,
+        PE_GAIN_A0_Pin,
+        d3_state ? GPIO_PIN_SET : GPIO_PIN_RESET
+    );
+    HAL_GPIO_WritePin(
+        PE_GAIN_A1_GPIO_Port,
+        PE_GAIN_A1_Pin,
+        d2_state ? GPIO_PIN_SET : GPIO_PIN_RESET
+    );
+}
+
 void stop_adc_acquisition(void)
 {
     HAL_TIM_Base_Stop(&htim6);
@@ -801,6 +982,12 @@ void udp_receive_callback(void *arg,
         memcpy(buffer,p->payload,len);
         buffer[len] = '\0';
 
+        if (addr != NULL && upcb != NULL)
+        {
+            udp_disconnect(upcb);
+            udp_connect(upcb, addr, 5005);
+        }
+
         parse_command(buffer);
 
         pbuf_free(p);
@@ -844,6 +1031,50 @@ void parse_command(char *cmd)
         uint32_t bits;
         sscanf(cmd, "ADC RES,%lu", &bits);
         update_adc_resolution(bits);
+    }
+    else if (strncmp(cmd, "DAC START", 9) == 0)
+    {
+        dds_start();
+    }
+    else if (strncmp(cmd, "DAC STOP", 8) == 0)
+    {
+        dds_stop();
+    }
+    else if (strncmp(cmd, "DAC FREQ", 8) == 0)
+    {
+        float freq_hz = 0.0f;
+        if (sscanf(cmd, "DAC FREQ,%f", &freq_hz) == 1)
+        {
+            dds_set_frequency(freq_hz);
+        }
+    }
+    else if (strncmp(cmd, "MODE,PE", 7) == 0)
+    {
+        set_board_mode(BOARD_MODE_PE);
+    }
+    else if (strncmp(cmd, "MODE,PR", 7) == 0)
+    {
+        set_board_mode(BOARD_MODE_PR);
+    }
+    else if (strncmp(cmd, "ACTUATOR,DDS", 12) == 0)
+    {
+        set_actuator_mode(ACTUATOR_MODE_DDS);
+    }
+    else if (strncmp(cmd, "ACTUATOR,FG", 11) == 0)
+    {
+        set_actuator_mode(ACTUATOR_MODE_FUNCTION_GENERATOR);
+    }
+    else if (strncmp(cmd, "ACTUATOR,STM32", 14) == 0)
+    {
+        set_actuator_mode(ACTUATOR_MODE_STM32_DAC);
+    }
+    else if (strncmp(cmd, "PE GAIN", 7) == 0)
+    {
+        uint32_t gain_index = 0U;
+        if (sscanf(cmd, "PE GAIN,%lu", &gain_index) == 1)
+        {
+            set_pe_gain((uint8_t)gain_index);
+        }
     }
 }
 void send_adc_data(uint32_t* data, uint32_t length)
