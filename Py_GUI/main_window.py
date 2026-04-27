@@ -18,7 +18,8 @@ class PCB_GUI(QWidget):
         super().__init__()
 
         self.setWindowTitle("MEMS Data Acquisition")
-        self.resize(1200, 600)
+        self.setMinimumSize(900, 650)
+        self.resize(1280, 760)
         self.setStyleSheet(STYLE)
 
         layout = QVBoxLayout()
@@ -51,13 +52,20 @@ class PCB_GUI(QWidget):
         self.back_btn.clicked.connect(self.go_back)
 
     def open_pr(self):
-
+        self.sender.set_board_mode("PR")
+        self.pr_page.sync_actuator_transport_mode()
         self.pages.setCurrentIndex(1)
 
     def open_pe(self):
-
+        self.sender.set_board_mode("PE")
+        self.pe_page.sync_actuator_transport_mode()
         self.pages.setCurrentIndex(2)
 
     def go_back(self):
 
         self.pages.setCurrentIndex(0)
+
+    def closeEvent(self, event):
+        self.receiver.stop()
+        self.sender.close()
+        super().closeEvent(event)

@@ -1,45 +1,54 @@
 import socket
 import threading
+import time
+
 import numpy as np
 
 
+def detect_local_ip(default="127.0.0.1"):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # No packets are sent; this asks the OS which local interface it would use.
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return default
+    finally:
+        sock.close()
+
+
 class UDPReceiver:
-    def __init__(self, port=5005, buffer_size=2000, resolution_bits=16):
-        # ---------------- SOCKET ----------------
-        self.port = port
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-        self.sock.bind(("0.0.0.0", self.port))
+    def __init__(self, port=5005, buffer_size=2000, resolution_bits=16, host="0.0.0.0"):
+        self.port = int(port)
+        self.host = host
+        self.display_host = detect_local_ip() if host == "0.0.0.0" else host
+        self.sock = None
 
-        print(f"[UDP] Listening on port {self.port}")
-
-        # ---------------- DATA BUFFER ----------------
         self.buffer_size = buffer_size
         self.adc1 = np.zeros(self.buffer_size, dtype=np.uint16)
         self.adc2 = np.zeros(self.buffer_size, dtype=np.uint16)
 
-        # ---------------- RESOLUTION ----------------
         self.resolution_bits = 16
         self.mask = 0xFFFF
         self.set_resolution(resolution_bits)
 
-        # ---------------- THREAD CONTROL ----------------
-        self.running = True
         self.lock = threading.Lock()
+        self.running = False
+        self.thread = None
+        self.connected = False
+        self.packet_count = 0
+        self.total_samples = 0
+        self.total_bytes = 0
+        self.last_packet_time = None
+        self.last_error = ""
+        self.error_count = 0
+        self.speed_mbps = 0.0
+        self.speed_window_bytes = 0
+        self.speed_window_start = time.perf_counter()
 
-        # ---------------- START THREAD ----------------
-        self.thread = threading.Thread(target=self.receive_loop, daemon=True)
-        self.thread.start()
+        self.start()
 
-    # =========================
-    # RESOLUTION CONTROL
-    # =========================
     def set_resolution(self, resolution):
-        """
-        Accepts:
-            10, 12, 14, 16
-            or "10-bit", "12-bit", "14-bit", "16-bit"
-        """
         if isinstance(resolution, str):
             resolution = resolution.strip().replace("-bit", "")
             resolution = int(resolution)
@@ -63,60 +72,94 @@ class UDPReceiver:
     def get_full_scale(self):
         return float((1 << self.resolution_bits) - 1)
 
-    # =========================
-    # RECEIVE LOOP
-    # =========================
+    def open_socket(self):
+        if self.sock is not None:
+            return
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+        self.sock.settimeout(0.5)
+        self.sock.bind((self.host, self.port))
+        self.connected = True
+        self.last_error = ""
+        print(f"[UDP] Listening on port {self.port}")
+
+    def start(self):
+        if self.thread is not None and self.thread.is_alive():
+            return
+
+        self.open_socket()
+        self.running = True
+        self.thread = threading.Thread(target=self.receive_loop, daemon=True)
+        self.thread.start()
+
+    def rebind(self, port, host=None):
+        port = int(port)
+        was_running = self.running
+        self.stop()
+        if host is not None:
+            self.host = host
+            self.display_host = detect_local_ip() if host == "0.0.0.0" else host
+        self.port = port
+
+        if was_running:
+            self.start()
+
     def receive_loop(self):
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(65535)
+                if self.sock is None:
+                    time.sleep(0.05)
+                    continue
 
-                # Convert raw bytes → uint32 array
+                data, _addr = self.sock.recvfrom(65535)
+                self.last_packet_time = time.time()
+                self.packet_count += 1
+                self.total_bytes += len(data)
+                self.speed_window_bytes += len(data)
+
+                elapsed = time.perf_counter() - self.speed_window_start
+                if elapsed >= 1.0:
+                    self.speed_mbps = (self.speed_window_bytes * 8.0) / (elapsed * 1e6)
+                    self.speed_window_bytes = 0
+                    self.speed_window_start = time.perf_counter()
+
                 samples = np.frombuffer(data, dtype=np.uint32)
-
                 if len(samples) == 0:
                     continue
 
-                # Extract two 16-bit lanes
                 adc1 = (samples & 0xFFFF).astype(np.uint16)
                 adc2 = ((samples >> 16) & 0xFFFF).astype(np.uint16)
 
-                # Apply resolution mask
                 adc1 = adc1 & self.mask
                 adc2 = adc2 & self.mask
 
                 n = len(adc1)
+                self.total_samples += n
 
                 with self.lock:
-                    # If received packet is larger than display buffer, keep newest samples only
                     if n >= self.buffer_size:
                         self.adc1[:] = adc1[-self.buffer_size:]
                         self.adc2[:] = adc2[-self.buffer_size:]
                     else:
-                        # Roll buffer left
                         self.adc1 = np.roll(self.adc1, -n)
                         self.adc2 = np.roll(self.adc2, -n)
-
-                        # Insert new data
                         self.adc1[-n:] = adc1
                         self.adc2[-n:] = adc2
 
+            except socket.timeout:
+                continue
             except OSError:
-                # Happens normally when socket is closed during stop()
                 break
             except Exception as e:
+                self.error_count += 1
+                self.last_error = str(e)
                 print("[UDP ERROR]", e)
 
-    # =========================
-    # GET DATA (RAW COUNTS)
-    # =========================
     def get_data(self):
         with self.lock:
             return self.adc1.copy(), self.adc2.copy()
 
-    # =========================
-    # GET DATA IN VOLTS
-    # =========================
     def get_data_volts(self, vref=3.3):
         with self.lock:
             full_scale = self.get_full_scale()
@@ -124,9 +167,6 @@ class UDPReceiver:
             adc2_v = self.adc2.astype(np.float64) / full_scale * vref
             return adc1_v.copy(), adc2_v.copy()
 
-    # =========================
-    # OPTIONAL: CHANGE DISPLAY BUFFER SIZE
-    # =========================
     def set_buffer_size(self, new_size):
         new_size = int(new_size)
         if new_size <= 0:
@@ -146,15 +186,35 @@ class UDPReceiver:
 
         print(f"[UDP] Buffer size set to {self.buffer_size}")
 
-    # =========================
-    # STOP RECEIVER
-    # =========================
+    def get_status(self):
+        return {
+            "host": self.host,
+            "display_host": self.display_host,
+            "port": self.port,
+            "connected": self.connected,
+            "packet_count": self.packet_count,
+            "total_samples": self.total_samples,
+            "total_bytes": self.total_bytes,
+            "last_packet_time": self.last_packet_time,
+            "error_count": self.error_count,
+            "last_error": self.last_error,
+            "buffer_size": self.buffer_size,
+            "speed_mbps": self.speed_mbps,
+        }
+
     def stop(self):
         self.running = False
 
         try:
-            self.sock.close()
+            if self.sock is not None:
+                self.sock.close()
         except Exception:
             pass
+        finally:
+            self.sock = None
+            self.connected = False
+
+        if self.thread is not None and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
 
         print("[UDP] Receiver stopped")

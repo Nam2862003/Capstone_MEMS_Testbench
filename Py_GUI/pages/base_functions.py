@@ -1,17 +1,20 @@
-from turtle import mode
-
 from PyQt6.QtWidgets import (
     QFormLayout, QLineEdit, QSizePolicy, QSpacerItem, QWidget, QVBoxLayout, QTabWidget,
     QLabel, QPushButton, QComboBox,
-    QGroupBox, QGridLayout, QHBoxLayout, QCheckBox
+    QGroupBox, QGridLayout, QHBoxLayout, QCheckBox, QMessageBox, QStackedWidget, QToolButton, QMenu, QSlider
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIntValidator, QAction
+
+import time
 
 import pyqtgraph as pg
 import numpy as np
 from lib.lock_in_amplifier import lock_in_amplifier
 from lib.fast_fourier_transform import fft_amplitude_phase
 from lib.root_mean_square import compute_rms_amplitude
+
+
 class BaseDAQPage(QWidget):
     def __init__(self, receiver, sender):
 
@@ -39,9 +42,12 @@ class BaseDAQPage(QWidget):
         self.last_freq = None
         self.sweeping = False
         self.current_freq = None
+        self.selected_actuator = "Direct Digital Synthesis (DDS)"
+        self.selected_output_mode = "Frequency Sweep"
         self.time_offset_1 = 0
         self.time_offset_2 = 0
         self.adc_running = False
+        self.external_freq_tolerance_hz = 50.0
 
         self.build_setup_tab()
         self.build_sweep_tab()
@@ -51,6 +57,10 @@ class BaseDAQPage(QWidget):
         self.timer = pg.QtCore.QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.timer.start(30)
+
+        self.comm_timer = pg.QtCore.QTimer()
+        self.comm_timer.timeout.connect(self.update_comm_status)
+        self.comm_timer.start(500)
     # ============================================
     # 1. SETUP TAB
     # ============================================
@@ -87,6 +97,7 @@ class BaseDAQPage(QWidget):
         button_layout.addWidget(self.stop_adc, 0, 2)
         adc_layout.addRow(button_layout)
         adc_group.setLayout(adc_layout)
+        adc_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         # =========================
         # 1.2 DAC SETTINGS
         # =========================
@@ -96,27 +107,72 @@ class BaseDAQPage(QWidget):
         dac_layout = QFormLayout()
         # self.dac_freq_input = QLineEdit("1000")  # 1 kHz default
         # dac_layout.addRow("Frequency (Hz):", self.dac_freq_input)
-        # Frequency sweep inputs
+        # Frequency inputs
+        self.constant_freq = QLineEdit("1000")
+        self.external_ref_freq = QLineEdit("1000")
         self.start_freq = QLineEdit("10")
         self.stop_freq = QLineEdit("100000")
         self.step_freq = QLineEdit("500")
 
-        freq_layout = QHBoxLayout()
-        freq_layout.addWidget(self.start_freq)
-        freq_layout.addWidget(QLabel("to"))
-        freq_layout.addWidget(self.stop_freq)
-        freq_layout.addWidget(QLabel("Step:"))
-        freq_layout.addWidget(self.step_freq)
+        self.frequency_stack = QStackedWidget()
 
-        dac_layout.addRow("Frequency (Hz):", freq_layout)
-        # Actuator Selector
-        self.actuator_selector = QComboBox()
-        self.actuator_selector.addItems([
-            "Direct Digital Synthesis (DDS)",
-            "Function Generator",
-            "STM32 DAC Output"
-        ])
-        dac_layout.addRow("Actuator:", self.actuator_selector)
+        constant_page = QWidget()
+        constant_layout = QHBoxLayout()
+        constant_layout.setContentsMargins(0, 0, 0, 0)
+        constant_layout.addWidget(self.constant_freq)
+        constant_page.setLayout(constant_layout)
+        constant_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        external_ref_page = QWidget()
+        external_ref_layout = QHBoxLayout()
+        external_ref_layout.setContentsMargins(0, 0, 0, 0)
+        self.auto_ref_freq_checkbox = QCheckBox("Auto")
+        self.auto_ref_freq_checkbox.setChecked(False)
+        external_ref_layout.addWidget(self.external_ref_freq)
+        external_ref_layout.addWidget(self.auto_ref_freq_checkbox)
+        external_ref_page.setLayout(external_ref_layout)
+        external_ref_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        sweep_page = QWidget()
+        sweep_layout = QHBoxLayout()
+        sweep_layout.setContentsMargins(0, 0, 0, 0)
+        sweep_layout.addWidget(self.start_freq)
+        sweep_layout.addWidget(QLabel("to"))
+        sweep_layout.addWidget(self.stop_freq)
+        sweep_layout.addWidget(QLabel("Step:"))
+        sweep_layout.addWidget(self.step_freq)
+        sweep_page.setLayout(sweep_layout)
+        sweep_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        self.frequency_stack.addWidget(constant_page)
+        self.frequency_stack.addWidget(external_ref_page)
+        self.frequency_stack.addWidget(sweep_page)
+        self.frequency_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        dac_layout.addRow("Frequency (Hz):", self.frequency_stack)
+
+        # Actuator / mode menu field
+        self.actuator_field = QWidget()
+        self.actuator_field.setObjectName("ActuatorField")
+        self.actuator_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        actuator_field_layout = QHBoxLayout()
+        actuator_field_layout.setContentsMargins(0, 0, 0, 0)
+        actuator_field_layout.setSpacing(0)
+        self.actuator_display = QLabel(self.selected_actuator)
+        self.actuator_display.setObjectName("ActuatorDisplay")
+        self.actuator_display.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.actuator_arrow = QToolButton()
+        self.actuator_arrow.setObjectName("ActuatorArrow")
+        self.actuator_arrow.setArrowType(Qt.ArrowType.DownArrow)
+        actuator_field_layout.addWidget(self.actuator_display, 1)
+        actuator_field_layout.addWidget(self.actuator_arrow, 0)
+        self.actuator_field.setLayout(actuator_field_layout)
+
+        self.actuator_menu = QMenu(self.actuator_field)
+        self.actuator_field.mousePressEvent = self.show_actuator_menu
+        self.actuator_display.mousePressEvent = self.show_actuator_menu
+        self.actuator_arrow.clicked.connect(lambda: self.show_actuator_menu(None))
+        self.build_actuator_menu()
+        dac_layout.addRow("Actuator:", self.actuator_field)
 
         # Mode selector
         self.mode_selector = QComboBox()
@@ -134,6 +190,7 @@ class BaseDAQPage(QWidget):
         button_layout.addWidget(self.stop_dac, 0, 1)
         dac_layout.addRow(button_layout)
         dac_group.setLayout(dac_layout)
+        dac_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 
         # =========================
         # 1.3 COMMUNICATION SETTINGS
@@ -142,16 +199,68 @@ class BaseDAQPage(QWidget):
         comm_group = QGroupBox("Communication Settings")
         comm_layout = QVBoxLayout()
 
-        self.eth_checkbox = QCheckBox("Ethernet")
-        self.usb_checkbox = QCheckBox("USB HS")
+        self.transport_selector = QComboBox()
+        self.transport_selector.addItems(["Ethernet (UDP)", "HS USB"])
+        comm_layout.addWidget(self.transport_selector)
 
-        # default (optional)
-        self.eth_checkbox.setChecked(True)
+        self.comm_stack = QStackedWidget()
 
-        comm_layout.addWidget(self.eth_checkbox)
-        comm_layout.addWidget(self.usb_checkbox)
+        ethernet_page = QWidget()
+        ethernet_layout = QVBoxLayout()
+        comm_form = QFormLayout()
+
+        self.target_ip_input = QLineEdit(self.sender.ip)
+        comm_form.addRow("Board IP:", self.target_ip_input)
+
+        self.local_ip_input = QLineEdit(self.receiver.display_host)
+        comm_form.addRow("PC IP:", self.local_ip_input)
+
+        self.command_port_input = QLineEdit(str(self.sender.port))
+        self.command_port_input.setValidator(QIntValidator(1, 65535, self))
+        comm_form.addRow("Command Port:", self.command_port_input)
+
+        self.data_port_input = QLineEdit(str(self.receiver.port))
+        self.data_port_input.setValidator(QIntValidator(1, 65535, self))
+        comm_form.addRow("Data Port:", self.data_port_input)
+
+        self.comm_status_label = QLabel()
+        self.comm_status_label.setWordWrap(True)
+        comm_form.addRow("Status:", self.comm_status_label)
+
+        comm_button_row = QHBoxLayout()
+        self.connect_comm_btn = QPushButton("Connect")
+        self.disconnect_comm_btn = QPushButton("Disconnect")
+        comm_button_row.addWidget(self.connect_comm_btn)
+        comm_button_row.addWidget(self.disconnect_comm_btn)
+
+        ethernet_layout.addLayout(comm_form)
+        ethernet_layout.addLayout(comm_button_row)
+        ethernet_page.setLayout(ethernet_layout)
+
+        usb_page = QWidget()
+        usb_layout = QVBoxLayout()
+        usb_form = QFormLayout()
+        self.usb_mode_label = QLabel("USB HS transport UI placeholder for future firmware support.")
+        self.usb_mode_label.setWordWrap(True)
+        self.usb_device_input = QLineEdit("Not implemented yet")
+        self.usb_device_input.setReadOnly(True)
+        self.usb_endpoint_input = QLineEdit("Reserved for future use")
+        self.usb_endpoint_input.setReadOnly(True)
+        self.usb_status_label = QLabel("USB HS settings will appear here once the firmware path is ready.")
+        self.usb_status_label.setWordWrap(True)
+        usb_form.addRow("Info:", self.usb_mode_label)
+        usb_form.addRow("Device:", self.usb_device_input)
+        usb_form.addRow("Endpoint:", self.usb_endpoint_input)
+        usb_form.addRow("Status:", self.usb_status_label)
+        usb_layout.addLayout(usb_form)
+        usb_page.setLayout(usb_layout)
+
+        self.comm_stack.addWidget(ethernet_page)
+        self.comm_stack.addWidget(usb_page)
+        comm_layout.addWidget(self.comm_stack)
 
         comm_group.setLayout(comm_layout)
+        comm_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 
         # =========================
         # 1.4 ADD TO MAIN LAYOUT
@@ -163,10 +272,25 @@ class BaseDAQPage(QWidget):
 
         # Vertical layout for ADC and DAC groups
         main_row = QHBoxLayout()
-        main_row.addWidget(adc_group)
-        main_row.addWidget(dac_group)
+        main_row.setAlignment(Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(adc_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(dac_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addLayout(main_row)
-        layout.addWidget(comm_group)
+        for extra_group in self.build_setup_extension_groups():
+            layout.addWidget(extra_group)
+
+        comm_sidebar_group = self.build_setup_sidebar_group()
+        if comm_sidebar_group is not None:
+            layout.addSpacing(24)
+            bottom_row = QHBoxLayout()
+            bottom_row.setAlignment(Qt.AlignmentFlag.AlignTop)
+            bottom_row.addWidget(comm_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+            bottom_row.addWidget(comm_sidebar_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+            layout.addLayout(bottom_row)
+        else:
+            layout.addSpacing(24)
+            layout.addWidget(comm_group)
+        layout.addStretch()
         self.setup.setLayout(layout)
 
         # connections
@@ -177,11 +301,21 @@ class BaseDAQPage(QWidget):
         self.resolution.currentTextChanged.connect(self.set_resolution)
         self.start_dac.clicked.connect(self.start_generation)
         self.stop_dac.clicked.connect(self.stop_generation)
+        self.connect_comm_btn.clicked.connect(self.connect_transport)
+        self.disconnect_comm_btn.clicked.connect(self.disconnect_transport)
+        self.transport_selector.currentIndexChanged.connect(self.update_transport_panel)
+        self.auto_ref_freq_checkbox.toggled.connect(self.update_actuator)
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
-        # Update mode tabs when actuator changes
-        self.actuator_selector.currentTextChanged.connect(self.update_actuator)
         self.update_actuator()
+        self.update_transport_panel()
+        self.update_comm_status()
+
+    def build_setup_extension_groups(self):
+        return []
+
+    def build_setup_sidebar_group(self):
+        return None
     # =========================
     # 2. SwEEP TAB
     # =========================
@@ -207,7 +341,7 @@ class BaseDAQPage(QWidget):
 
         self.cursor_checkbox1 = QCheckBox("Cursors")
         self.cursor_checkbox1.setObjectName("CursorToggle")
-        self.cursor_checkbox1.setChecked(True)
+        self.cursor_checkbox1.setChecked(False)
         self.cursor_mode1 = QComboBox()
         self.cursor_mode1.addItems(["Vertical", "Horizontal", "Track"])
         row1.addSpacing(20)
@@ -239,7 +373,7 @@ class BaseDAQPage(QWidget):
         row2.addWidget(self.x_selector2)
         self.cursor_checkbox2 = QCheckBox("Cursors")
         self.cursor_checkbox2.setObjectName("CursorToggle")
-        self.cursor_checkbox2.setChecked(True)
+        self.cursor_checkbox2.setChecked(False)
         self.cursor_mode2 = QComboBox()
         self.cursor_mode2.addItems(["Vertical", "Horizontal", "Track"])
         row2.addSpacing(20)
@@ -325,7 +459,7 @@ class BaseDAQPage(QWidget):
         row1.addWidget(self.ext_x_selector1)
         self.ext_cursor_checkbox1 = QCheckBox("Cursors")
         self.ext_cursor_checkbox1.setObjectName("CursorToggle")
-        self.ext_cursor_checkbox1.setChecked(True)
+        self.ext_cursor_checkbox1.setChecked(False)
         self.ext_cursor_mode1 = QComboBox()
         self.ext_cursor_mode1.addItems(["Vertical", "Horizontal", "Track"])
         row1.addSpacing(20)
@@ -357,7 +491,7 @@ class BaseDAQPage(QWidget):
         row2.addWidget(self.ext_x_selector2)
         self.ext_cursor_checkbox2 = QCheckBox("Cursors")
         self.ext_cursor_checkbox2.setObjectName("CursorToggle")
-        self.ext_cursor_checkbox2.setChecked(True)
+        self.ext_cursor_checkbox2.setChecked(False)
         self.ext_cursor_mode2 = QComboBox()
         self.ext_cursor_mode2.addItems(["Vertical", "Horizontal", "Track"])
         row2.addSpacing(20)
@@ -802,6 +936,158 @@ class BaseDAQPage(QWidget):
     def toggle_external_cursor(self, checked):
         self.set_cursor_visible(self.ext_cursor1, checked)
         self.set_cursor_visible(self.ext_cursor2, checked)
+
+    def validate_comm_settings(self):
+        board_ip = self.target_ip_input.text().strip()
+        local_ip = self.local_ip_input.text().strip()
+        cmd_port_text = self.command_port_input.text().strip()
+        data_port_text = self.data_port_input.text().strip()
+
+        if not board_ip:
+            raise ValueError("Board IP cannot be empty.")
+        if not local_ip:
+            raise ValueError("PC IP cannot be empty.")
+        if not cmd_port_text or not data_port_text:
+            raise ValueError("Command port and data port are required.")
+
+        return board_ip, local_ip, int(cmd_port_text), int(data_port_text)
+
+    def update_transport_panel(self):
+        transport_name = self.transport_selector.currentText()
+        if transport_name == "Ethernet (UDP)":
+            self.comm_stack.setCurrentIndex(0)
+        else:
+            self.comm_stack.setCurrentIndex(1)
+
+    def build_actuator_menu(self):
+        actuator_modes = {
+            "Direct Digital Synthesis (DDS)": ["Constant Output", "Frequency Sweep"],
+            "Function Generator": ["Constant Output", "Frequency Sweep"],
+            "STM32 DAC Output": ["Constant Output", "Frequency Sweep"],
+        }
+
+        self.actuator_menu.clear()
+        self.actuator_actions = {}
+        for actuator_name, modes in actuator_modes.items():
+            submenu = self.actuator_menu.addMenu(actuator_name)
+            for mode_name in modes:
+                action = QAction(mode_name, self)
+                action.setCheckable(True)
+                action.triggered.connect(
+                    lambda checked=False, a=actuator_name, m=mode_name: self.select_actuator_mode(a, m)
+                )
+                submenu.addAction(action)
+                self.actuator_actions[(actuator_name, mode_name)] = action
+
+        self._refresh_actuator_menu_state()
+
+    def select_actuator_mode(self, actuator_name, output_mode):
+        self.selected_actuator = actuator_name
+        self.selected_output_mode = output_mode
+        self._refresh_actuator_menu_state()
+        self.sync_actuator_transport_mode()
+        if hasattr(self, "start_dac"):
+            self.update_actuator()
+
+
+    def _refresh_actuator_menu_state(self):
+        if hasattr(self, "actuator_actions"):
+            for (actuator_name, mode_name), action in self.actuator_actions.items():
+                action.setChecked(
+                    actuator_name == self.selected_actuator and mode_name == self.selected_output_mode
+                )
+
+        if hasattr(self, "actuator_display"):
+            self.actuator_display.setText(self.selected_actuator)
+
+        if hasattr(self, "actuator_field"):
+            self.actuator_field.setToolTip(f"{self.selected_actuator} / {self.selected_output_mode}")
+
+    def show_actuator_menu(self, event):
+        if hasattr(self, "actuator_menu") and hasattr(self, "actuator_field"):
+            self.actuator_menu.popup(self.actuator_field.mapToGlobal(self.actuator_field.rect().bottomLeft()))
+        if event is not None:
+            event.accept()
+
+    def current_actuator(self):
+        return self.selected_actuator
+
+    def current_output_mode(self):
+        return self.selected_output_mode
+
+    def current_actuator_transport_mode(self):
+        actuator = self.current_actuator()
+        if actuator == "Function Generator":
+            return "FG"
+        if actuator == "STM32 DAC Output":
+            return "STM32"
+        return "DDS"
+
+    def sync_actuator_transport_mode(self):
+        if not hasattr(self, "sender"):
+            return
+        self.sender.set_actuator_mode(self.current_actuator_transport_mode())
+
+    def connect_transport(self):
+        if self.transport_selector.currentText() != "Ethernet (UDP)":
+            QMessageBox.information(
+                self,
+                "USB HS Not Ready",
+                "USB HS settings are shown for future implementation, but the transport is not wired yet."
+            )
+            return
+
+        try:
+            board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
+            self.sender.configure(ip=board_ip, port=cmd_port)
+            self.receiver.rebind(data_port, host=local_ip)
+            self.sender.open()
+            self.sender.sync_board_mode()
+            self.sender.sync_actuator_mode()
+            if hasattr(self.sender, "sync_pe_gain"):
+                self.sender.sync_pe_gain()
+            self.receiver.start()
+            self.update_comm_status()
+        except Exception as exc:
+            QMessageBox.warning(self, "Connection Error", str(exc))
+
+    def disconnect_transport(self):
+        if self.transport_selector.currentText() != "Ethernet (UDP)":
+            return
+
+        self.sender.close()
+        self.receiver.stop()
+        self.update_comm_status()
+
+    def format_age_seconds(self, timestamp):
+        if not timestamp:
+            return "never"
+        return f"{max(0.0, time.time() - timestamp):.1f}s ago"
+
+    def update_comm_status(self):
+        if not hasattr(self, "comm_status_label"):
+            return
+
+        if hasattr(self, "transport_selector") and self.transport_selector.currentText() != "Ethernet (UDP)":
+            return
+
+        sender_status = self.sender.get_status()
+        receiver_status = self.receiver.get_status()
+        sender_state = "ready" if sender_status["connected"] else "stopped"
+        receiver_state = "listening" if receiver_status["connected"] else "stopped"
+        bind_text = receiver_status["display_host"]
+        if receiver_status["host"] == "0.0.0.0":
+            bind_text = f"{receiver_status['display_host']} (all interfaces)"
+
+        self.comm_status_label.setText(
+            f"Sender: {sender_state} to {sender_status['ip']}:{sender_status['port']} | "
+            f"RX: {receiver_state} on {bind_text}:{receiver_status['port']} | "
+            f"Packets: {receiver_status['packet_count']} | "
+            f"Speed: {receiver_status['speed_mbps']:.2f} Mbps | "
+            f"Sent: {sender_status['sent_count']} | "
+            f"Last RX: {self.format_age_seconds(receiver_status['last_packet_time'])} | "
+            f"Last TX: {self.format_age_seconds(sender_status['last_send_time'])}"
+        )
     # =========================
     # ADC & DAC CONTROL (USB COMMUNICATION/UDP COMMANDS)
     # =========================
@@ -839,23 +1125,35 @@ class BaseDAQPage(QWidget):
 
     # DAC control
     def start_generation(self):
+        if self.current_actuator() == "Function Generator":
+            self.sweeping = False
+            self.current_freq = float(self.external_ref_freq.text())
+            return
+
         self.sender.start_gen()
         self.reset_sweep()
-        self.sweeping = True
-        self.current_freq = float(self.start_freq.text())
-        # send FIRST frequency
-        self.set_dac_freq(self.current_freq)
+        if self.current_output_mode() == "Frequency Sweep":
+            self.sweeping = True
+            self.current_freq = float(self.start_freq.text())
+            self.set_dac_freq(self.current_freq)
+        else:
+            self.sweeping = False
+            self.current_freq = float(self.constant_freq.text())
+            self.set_dac_freq(self.current_freq)
 
     def stop_generation(self):
         self.sender.stop_gen()
         self.sweeping = False
 
     def set_dac_freq(self, value=None):
-        # self.sender.send(f"DAC:{float(value
-        if self.sweeping == True:
+        if value is not None:
+            self.sender.set_dac_freq(value)
+            return
+
+        if self.sweeping:
             value = self.current_freq
         else:
-            value = float(self.start_freq.text())
+            value = float(self.constant_freq.text())
         self.sender.set_dac_freq(value)
 
     def reset_sweep(self):
@@ -874,42 +1172,57 @@ class BaseDAQPage(QWidget):
     # MODE Controll (Enable/Disable tabs based on actuator)
     # =========================
     def update_actuator(self):
-        actuator = self.actuator_selector.currentText()
+        actuator = self.current_actuator()
+        output_mode = self.current_output_mode()
+        sweep_mode = output_mode == "Frequency Sweep"
+
         # tab indexes (IMPORTANT: adjust if different)
         SETUP_TAB = 0
         SWEEP_TAB = 1
         EXTERNAL_SIGNAL_TAB  = 2
         if actuator == "Function Generator":
+            self.frequency_stack.setCurrentIndex(1)
             # disable Sweep (DDS)
             self.tabs.setTabEnabled(SWEEP_TAB, False)
             self.start_dac.setEnabled(False)
             self.stop_dac.setEnabled(False)
+            self.constant_freq.setEnabled(False)
+            self.external_ref_freq.setEnabled(not self.auto_ref_freq_checkbox.isChecked())
+            self.auto_ref_freq_checkbox.setEnabled(True)
             self.start_freq.setEnabled(False)
             self.stop_freq.setEnabled(False)
             self.step_freq.setEnabled(False)
             self.sweeping = False
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, True)
         elif actuator == "Direct Digital Synthesis (DDS)":
+            self.frequency_stack.setCurrentIndex(2 if sweep_mode else 0)
             # disable Live Data
-            self.tabs.setTabEnabled(SWEEP_TAB, True)
+            self.tabs.setTabEnabled(SWEEP_TAB, sweep_mode)
             self.start_dac.setEnabled(True)
             self.stop_dac.setEnabled(True)
-            self.start_freq.setEnabled(True)
-            self.stop_freq.setEnabled(True)
-            self.step_freq.setEnabled(True)
+            self.constant_freq.setEnabled(not sweep_mode)
+            self.external_ref_freq.setEnabled(False)
+            self.auto_ref_freq_checkbox.setEnabled(False)
+            self.start_freq.setEnabled(sweep_mode)
+            self.stop_freq.setEnabled(sweep_mode)
+            self.step_freq.setEnabled(sweep_mode)
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
         elif actuator == "STM32 DAC Output":
+            self.frequency_stack.setCurrentIndex(2 if sweep_mode else 0)
             # optional: allow both
-            self.tabs.setTabEnabled(SWEEP_TAB, True)
+            self.tabs.setTabEnabled(SWEEP_TAB, sweep_mode)
             self.start_dac.setEnabled(True)
             self.stop_dac.setEnabled(True)
-            self.start_freq.setEnabled(True)
-            self.stop_freq.setEnabled(True)
-            self.step_freq.setEnabled(True)
+            self.constant_freq.setEnabled(not sweep_mode)
+            self.external_ref_freq.setEnabled(False)
+            self.auto_ref_freq_checkbox.setEnabled(False)
+            self.start_freq.setEnabled(sweep_mode)
+            self.stop_freq.setEnabled(sweep_mode)
+            self.step_freq.setEnabled(sweep_mode)
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
 
     def get_active_plot_widgets(self):
-        actuator = self.actuator_selector.currentText()
+        actuator = self.current_actuator()
         if actuator == "Function Generator":
             return {
                 "y1": self.ext_y_selector1,
@@ -1025,6 +1338,59 @@ class BaseDAQPage(QWidget):
     def reset_time_axis(self):
         self.time_offset_1 = 0
         self.time_offset_2 = 0
+
+    def update_frequency_history(self, f_ref, amp, phase_deg):
+        actuator = self.current_actuator()
+
+        if actuator == "Function Generator":
+            if not self.sweep_freqs:
+                self.sweep_freqs.append(f_ref)
+                self.sweep_amp.append(amp)
+                self.sweep_phase.append(phase_deg)
+                self.last_freq = f_ref
+                return
+
+            if self.last_freq is None or abs(f_ref - self.last_freq) >= self.external_freq_tolerance_hz:
+                self.sweep_freqs.append(f_ref)
+                self.sweep_amp.append(amp)
+                self.sweep_phase.append(phase_deg)
+                self.last_freq = f_ref
+            else:
+                self.sweep_freqs[-1] = f_ref
+                self.sweep_amp[-1] = amp
+                self.sweep_phase[-1] = phase_deg
+                self.last_freq = f_ref
+            return
+
+        if self.last_freq != f_ref:
+            self.sweep_freqs.append(f_ref)
+            self.sweep_amp.append(amp)
+            self.sweep_phase.append(phase_deg)
+            self.last_freq = f_ref
+
+    def estimate_signal_frequency(self, signal, fs):
+        if signal is None or len(signal) < 8 or fs <= 0:
+            return None
+
+        centered = np.asarray(signal, dtype=float) - np.mean(signal)
+        if not np.any(centered):
+            return None
+
+        windowed = centered * np.hanning(len(centered))
+        spectrum = np.fft.rfft(windowed)
+        freqs = np.fft.rfftfreq(len(windowed), d=1.0 / fs)
+
+        if len(freqs) < 2:
+            return None
+
+        magnitudes = np.abs(spectrum)
+        magnitudes[0] = 0.0
+
+        peak_index = int(np.argmax(magnitudes))
+        if peak_index <= 0 or magnitudes[peak_index] <= 0:
+            return None
+
+        return float(freqs[peak_index])
     # ========================================================
     # PLOTTING
     # ========================================================
@@ -1051,10 +1417,20 @@ class BaseDAQPage(QWidget):
         # print("Resolution:", self.resolution.currentText())
 
         fs = float(self.sampling_rate_input.text())
-        if self.sweeping:
+        if self.current_actuator() == "Function Generator":
+            if self.auto_ref_freq_checkbox.isChecked():
+                detected_freq = self.estimate_signal_frequency(adc1, fs)
+                if detected_freq is not None:
+                    self.external_ref_freq.setText(f"{detected_freq:.2f}")
+                    f_ref = detected_freq
+                else:
+                    f_ref = float(self.external_ref_freq.text())
+            else:
+                f_ref = float(self.external_ref_freq.text())
+        elif self.sweeping:
             f_ref = self.current_freq
         else:
-            f_ref = float(self.start_freq.text())
+            f_ref = float(self.constant_freq.text())
 
         mode = self.mode_selector.currentText()
         if mode == "Lock-in Amplifier":
@@ -1077,11 +1453,7 @@ class BaseDAQPage(QWidget):
         y2 = y2_box.currentText()
         x2 = x2_box.currentText()
 
-        if self.last_freq != f_ref:
-            self.sweep_freqs.append(f_ref)
-            self.sweep_amp.append(amp)
-            self.sweep_phase.append(np.degrees(phase))
-            self.last_freq = f_ref
+        self.update_frequency_history(f_ref, amp, np.degrees(phase))
 
         freqs = np.array(self.sweep_freqs)
         amps = np.array(self.sweep_amp)
