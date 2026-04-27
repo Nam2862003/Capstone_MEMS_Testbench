@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "name": "STM32Cube: Appli via Boot Debug",
+            "deviceName": "STM32H7S3L8",
+            "deviceCore": "Cortex-M7",
+            "origin": "snippet",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "serverInterface": "SWD",
+            "serverApID": "1",
+            "serverReset": "Connect under reset",
+            "serverVerify": true,
+            "serverExtLoader": [
+                {
+                    "loader": "C:/ST/STM32CubeIDE_2.1.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.win32_2.2.400.202601091506/tools/bin/ExternalLoader/MX25UW25645G_NUCLEO-H7S3L8.stldr",
+                    "initialize": false
+                }
+            ],
+            "imagesAndSymbols": [
+                {
+                    "imageFileName": "${workspaceFolder}/Appli/build/NUCLEO_H7S3L8_CDC_Appli.elf",
+                    "symbolFileName": "${workspaceFolder}/Appli/build/NUCLEO_H7S3L8_CDC_Appli.elf"
+                },
+                {
+                    "imageFileName": "${workspaceFolder}/Boot/build/NUCLEO_H7S3L8_CDC_Boot.elf",
+                    "symbolFileName": "${workspaceFolder}/Boot/build/NUCLEO_H7S3L8_CDC_Boot.elf"
+                }
+            ]
+        }
+    ]
+}
