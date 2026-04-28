@@ -39,8 +39,8 @@ ENTRY(Reset_Handler)
 /* Memories definition */
 MEMORY
 {
-  RAM           (xrw) : ORIGIN = __RAM,    LENGTH = __RAM_SIZE -__RAM_NONCACHEABLEBUFFER_SIZE
-  RAM_NONCACHEABLEBUFFER (xrw) : ORIGIN = __RAM + __RAM_SIZE - __RAM_NONCACHEABLEBUFFER_SIZE,  LENGTH = __RAM_NONCACHEABLEBUFFER_SIZE
+  RAM           (xrw) : ORIGIN = __RAM,    LENGTH = __RAM_NONCACHEABLEBUFFER_BEGIN - __RAM
+  RAM_NONCACHEABLEBUFFER (xrw) : ORIGIN = __RAM_NONCACHEABLEBUFFER_BEGIN,  LENGTH = __RAM_NONCACHEABLEBUFFER_SIZE
   ITCM          (rw)  : ORIGIN = 0x00000000,  LENGTH = 0x00010000
   DTCM          (xrw) : ORIGIN = 0x20000000,  LENGTH = 0x00010000
   SRAMAHB       (rw)  : ORIGIN = 0x30000000,  LENGTH = 0x00008000
@@ -58,7 +58,8 @@ __FLASH_SIZE   = 0x08000000;
 
 __RAM          = 0x24000000;
 __RAM_SIZE     = 0x72000;
-__RAM_NONCACHEABLEBUFFER_SIZE = 0x400;
+__RAM_NONCACHEABLEBUFFER_BEGIN = 0x24040000;
+__RAM_NONCACHEABLEBUFFER_SIZE = 0x20000;
 
 /* Sections */
 SECTIONS
@@ -231,6 +232,14 @@ SECTIONS
     KEEP(*(noncacheable_buffer))
     __NONCACHEABLEBUFFER_END = .;  /* create symbol for start of section */
   } > RAM_NONCACHEABLEBUFFER
+
+  .sram_ahb (NOLOAD):
+  {
+    . = ALIGN(32768);
+    *(.sram_ahb)
+    *(.sram_ahb*)
+    . = ALIGN(32);
+  } > SRAMAHB
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack (NOLOAD) :
