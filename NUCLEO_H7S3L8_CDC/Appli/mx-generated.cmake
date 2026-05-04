@@ -58,6 +58,8 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_i2c_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_smbus.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_smbus_ex.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_spi.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_spi_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_tim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_hal_tim_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../Drivers/STM32H7RSxx_HAL_Driver/Src/stm32h7rsxx_ll_ucpd.c

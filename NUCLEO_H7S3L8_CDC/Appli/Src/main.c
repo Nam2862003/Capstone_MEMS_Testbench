@@ -36,6 +36,32 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define DDS_CS_GPIO_Port GPIOD
+#define DDS_CS_Pin GPIO_PIN_14
+#define PE_PR_SEL_GPIO_Port GPIOE
+#define PE_PR_SEL_Pin GPIO_PIN_9
+#define ACTSRC_GPIO_Port GPIOE
+#define ACTSRC_Pin GPIO_PIN_11
+#define BNC_ADC_GPIO_Port GPIOE
+#define BNC_ADC_Pin GPIO_PIN_15
+#define PE_GAIN_A0_GPIO_Port GPIOE
+#define PE_GAIN_A0_Pin GPIO_PIN_13
+#define PE_GAIN_A1_GPIO_Port GPIOE
+#define PE_GAIN_A1_Pin GPIO_PIN_8
+
+#define AD9833_CTRL_B28 0x2000U
+#define AD9833_CTRL_RESET 0x0100U
+#define AD9833_CTRL_SLEEP1 0x0080U
+#define AD9833_FREQ0_REG 0x4000U
+#define AD9833_MCLK_HZ 25000000.0
+
+#define BOARD_MODE_PE 0U
+#define BOARD_MODE_PR 1U
+
+#define ACTUATOR_MODE_NONE 0U
+#define ACTUATOR_MODE_DDS 1U
+#define ACTUATOR_MODE_FUNCTION_GENERATOR 2U
+#define ACTUATOR_MODE_STM32_DAC 3U
 
 /* USER CODE END PD */
 
@@ -53,6 +79,8 @@ DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 I2C_HandleTypeDef hi2c3;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN PV */
@@ -68,6 +96,11 @@ uint16_t adc1, adc2;
 static volatile uint8_t adc_stream_enabled = 0U;
 static char usb_command_buffer[96];
 static uint32_t usb_command_length;
+static volatile uint8_t dds_running = 0U;
+static volatile uint32_t dds_frequency_hz = 1000U;
+static volatile uint8_t board_mode = BOARD_MODE_PE;
+static volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
+static volatile uint8_t pe_gain_index = 0U;
 
 /* USER CODE END PV */
 
@@ -80,6 +113,7 @@ static void MX_UCPD1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 static void CDC_SendBytes(uint8_t *data, uint16_t length);
 static void CDC_SendText(const char *text);
@@ -90,6 +124,14 @@ static void StopAdcAcquisition(void);
 static void SetAdcBufferSize(uint32_t requested_size);
 static void SetAdcSamplingRate(uint32_t sample_rate_hz);
 static void SetAdcResolution(uint32_t resolution_bits);
+static uint8_t IsCompleteUsbCommand(const char *command);
+static void DdsInit(void);
+static void DdsStart(void);
+static void DdsStop(void);
+static void DdsSetFrequency(float freq_hz);
+static void SetBoardMode(uint8_t mode);
+static void SetActuatorMode(uint8_t mode);
+static void SetPeGain(uint8_t gain_index);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -144,6 +186,7 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_TIM6_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Stop(&hadc1);
   HAL_ADC_Stop(&hadc2);
@@ -160,6 +203,10 @@ int main(void)
   }
 
   /* ADC streaming starts only after the GUI sends START ADC. */
+  DdsInit();
+  SetBoardMode(BOARD_MODE_PE);
+  SetActuatorMode(ACTUATOR_MODE_DDS);
+  SetPeGain(0U);
 
   /* USER CODE END 2 */
 
@@ -401,6 +448,54 @@ static void MX_I2C3_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 0x7;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi1.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi1.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
+  hspi1.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  hspi1.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
+  hspi1.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief TIM6 Initialization Function
   * @param None
   * @retval None
@@ -548,12 +643,33 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOM_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_3, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOM, GPIO_PIN_9, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_13|GPIO_PIN_11|GPIO_PIN_15|GPIO_PIN_7
+                          |GPIO_PIN_9|GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : PF3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PM9 */
   GPIO_InitStruct.Pin = GPIO_PIN_9;
@@ -561,6 +677,22 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOM, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PE13 PE11 PE15 PE7
+                           PE9 PE8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_11|GPIO_PIN_15|GPIO_PIN_7
+                          |GPIO_PIN_9|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PD14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   HAL_GPIO_WritePin(GPIOM, GPIO_PIN_9, GPIO_PIN_SET);
@@ -575,6 +707,137 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void DdsWriteWord(uint16_t word)
+{
+  uint8_t tx[2];
+
+  tx[0] = (uint8_t)((word >> 8U) & 0xFFU);
+  tx[1] = (uint8_t)(word & 0xFFU);
+
+  HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_RESET);
+  (void)HAL_SPI_Transmit(&hspi1, tx, 2U, HAL_MAX_DELAY);
+  HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_SET);
+}
+
+static void DdsApplyFrequencyWord(uint32_t freq_word)
+{
+  uint16_t lsb_word = AD9833_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
+  uint16_t msb_word = AD9833_FREQ0_REG | (uint16_t)((freq_word >> 14U) & 0x3FFFU);
+
+  DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET);
+  DdsWriteWord(lsb_word);
+  DdsWriteWord(msb_word);
+
+  if (dds_running != 0U)
+  {
+    DdsWriteWord(AD9833_CTRL_B28);
+  }
+  else
+  {
+    DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+  }
+}
+
+static void DdsInit(void)
+{
+  HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_SET);
+  dds_running = 0U;
+  DdsApplyFrequencyWord(0U);
+  DdsSetFrequency((float)dds_frequency_hz);
+}
+
+static void DdsStart(void)
+{
+  dds_running = 1U;
+  DdsSetFrequency((float)dds_frequency_hz);
+}
+
+static void DdsStop(void)
+{
+  dds_running = 0U;
+  DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+}
+
+static void DdsSetFrequency(float freq_hz)
+{
+  double tuning;
+
+  if (freq_hz < 0.0f)
+  {
+    return;
+  }
+
+  tuning = ((double)freq_hz * 268435456.0) / AD9833_MCLK_HZ;
+  if (tuning > 268435455.0)
+  {
+    tuning = 268435455.0;
+  }
+
+  dds_frequency_hz = (uint32_t)(freq_hz + 0.5f);
+  DdsApplyFrequencyWord((uint32_t)(tuning + 0.5));
+}
+
+static void SetBoardMode(uint8_t mode)
+{
+  board_mode = mode;
+
+  if (mode == BOARD_MODE_PR)
+  {
+    HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_SET);
+  }
+  else
+  {
+    board_mode = BOARD_MODE_PE;
+    HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
+  }
+}
+
+static void SetActuatorMode(uint8_t mode)
+{
+  actuator_mode = mode;
+
+  switch (mode)
+  {
+    case ACTUATOR_MODE_FUNCTION_GENERATOR:
+      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+      break;
+
+    case ACTUATOR_MODE_DDS:
+      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+      break;
+
+    case ACTUATOR_MODE_STM32_DAC:
+    default:
+      actuator_mode = ACTUATOR_MODE_STM32_DAC;
+      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+      break;
+  }
+}
+
+static void SetPeGain(uint8_t gain_index)
+{
+  uint8_t a0_state;
+  uint8_t a1_state;
+
+  if (gain_index > 3U)
+  {
+    return;
+  }
+
+  pe_gain_index = gain_index;
+  a0_state = (uint8_t)(gain_index & 0x01U);
+  a1_state = (uint8_t)((gain_index >> 1U) & 0x01U);
+
+  HAL_GPIO_WritePin(PE_GAIN_A0_GPIO_Port,
+                    PE_GAIN_A0_Pin,
+                    (a0_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(PE_GAIN_A1_GPIO_Port,
+                    PE_GAIN_A1_Pin,
+                    (a1_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
 
 static void CDC_SendBytes(uint8_t *data, uint16_t length)
 {
@@ -800,6 +1063,44 @@ static void SetAdcResolution(uint32_t resolution_bits)
   }
 }
 
+static uint8_t IsCompleteUsbCommand(const char *command)
+{
+  if ((strcmp(command, "BOARD?") == 0) ||
+      (strcmp(command, "STATUS?") == 0) ||
+      (strcmp(command, "START") == 0) ||
+      (strcmp(command, "START ADC") == 0) ||
+      (strcmp(command, "STOP") == 0) ||
+      (strcmp(command, "STOP ADC") == 0) ||
+      (strcmp(command, "DAC START") == 0) ||
+      (strcmp(command, "DDS START") == 0) ||
+      (strcmp(command, "DAC STOP") == 0) ||
+      (strcmp(command, "DDS STOP") == 0) ||
+      (strcmp(command, "MODE,PE") == 0) ||
+      (strcmp(command, "MODE,PR") == 0) ||
+      (strcmp(command, "PCB,PE") == 0) ||
+      (strcmp(command, "PCB,PR") == 0) ||
+      (strcmp(command, "ACTUATOR,DDS") == 0) ||
+      (strcmp(command, "ACTUATOR,FG") == 0) ||
+      (strcmp(command, "ACTUATOR,FUNCTION_GENERATOR") == 0) ||
+      (strcmp(command, "ACTUATOR,STM32") == 0) ||
+      (strcmp(command, "ACTUATOR,STM32_DAC") == 0))
+  {
+    return 1U;
+  }
+
+  if ((strncmp(command, "BUF,", 4) == 0) ||
+      (strncmp(command, "ADC SAMP,", 9) == 0) ||
+      (strncmp(command, "ADC RES,", 8) == 0) ||
+      (strncmp(command, "DAC FREQ,", 9) == 0) ||
+      (strncmp(command, "DDS FREQ,", 9) == 0) ||
+      (strncmp(command, "PE GAIN,", 8) == 0))
+  {
+    return 1U;
+  }
+
+  return 0U;
+}
+
 static void ProcessUsbCommand(const char *command)
 {
   if (strcmp(command, "BOARD?") == 0)
@@ -808,6 +1109,23 @@ static void ProcessUsbCommand(const char *command)
 
     adc_stream_enabled = 0U;
     CDC_SendText("BOARD,Nucleo H7S3L8\r\n");
+    adc_stream_enabled = stream_was_enabled;
+  }
+  else if (strcmp(command, "STATUS?") == 0)
+  {
+    char response[96];
+    uint8_t stream_was_enabled = adc_stream_enabled;
+
+    adc_stream_enabled = 0U;
+    (void)snprintf(response,
+                   sizeof(response),
+                   "STATUS,B%u,A%u,G%u,DDS,%lu,%u\r\n",
+                   (unsigned int)board_mode,
+                   (unsigned int)actuator_mode,
+                   (unsigned int)pe_gain_index,
+                   (unsigned long)dds_frequency_hz,
+                   (unsigned int)dds_running);
+    CDC_SendText(response);
     adc_stream_enabled = stream_was_enabled;
   }
   else if ((strcmp(command, "START") == 0) || (strcmp(command, "START ADC") == 0))
@@ -844,10 +1162,54 @@ static void ProcessUsbCommand(const char *command)
 
     SetAdcResolution(resolution_bits);
   }
+  else if ((strcmp(command, "DAC START") == 0) || (strcmp(command, "DDS START") == 0))
+  {
+    DdsStart();
+  }
+  else if ((strcmp(command, "DAC STOP") == 0) || (strcmp(command, "DDS STOP") == 0))
+  {
+    DdsStop();
+  }
+  else if (strncmp(command, "DAC FREQ,", 9) == 0)
+  {
+    DdsSetFrequency((float)strtod(&command[9], NULL));
+  }
+  else if (strncmp(command, "DDS FREQ,", 9) == 0)
+  {
+    DdsSetFrequency((float)strtod(&command[9], NULL));
+  }
+  else if ((strcmp(command, "MODE,PE") == 0) || (strcmp(command, "PCB,PE") == 0))
+  {
+    SetBoardMode(BOARD_MODE_PE);
+  }
+  else if ((strcmp(command, "MODE,PR") == 0) || (strcmp(command, "PCB,PR") == 0))
+  {
+    SetBoardMode(BOARD_MODE_PR);
+  }
+  else if (strcmp(command, "ACTUATOR,DDS") == 0)
+  {
+    SetActuatorMode(ACTUATOR_MODE_DDS);
+  }
+  else if ((strcmp(command, "ACTUATOR,FG") == 0) ||
+           (strcmp(command, "ACTUATOR,FUNCTION_GENERATOR") == 0))
+  {
+    SetActuatorMode(ACTUATOR_MODE_FUNCTION_GENERATOR);
+  }
+  else if ((strcmp(command, "ACTUATOR,STM32") == 0) ||
+           (strcmp(command, "ACTUATOR,STM32_DAC") == 0))
+  {
+    SetActuatorMode(ACTUATOR_MODE_STM32_DAC);
+  }
+  else if (strncmp(command, "PE GAIN,", 8) == 0)
+  {
+    SetPeGain((uint8_t)strtoul(&command[8], NULL, 10));
+  }
 }
 
 void App_CDC_Receive(uint8_t *data, uint32_t length)
 {
+  uint8_t command_processed = 0U;
+
   for (uint32_t i = 0U; i < length; i++)
   {
     char c = (char)data[i];
@@ -859,6 +1221,7 @@ void App_CDC_Receive(uint8_t *data, uint32_t length)
         usb_command_buffer[usb_command_length] = '\0';
         ProcessUsbCommand(usb_command_buffer);
         usb_command_length = 0U;
+        command_processed = 1U;
       }
     }
     else if (usb_command_length < (sizeof(usb_command_buffer) - 1U))
@@ -867,6 +1230,16 @@ void App_CDC_Receive(uint8_t *data, uint32_t length)
     }
     else
     {
+      usb_command_length = 0U;
+    }
+  }
+
+  if ((command_processed == 0U) && (usb_command_length > 0U))
+  {
+    usb_command_buffer[usb_command_length] = '\0';
+    if (IsCompleteUsbCommand(usb_command_buffer) != 0U)
+    {
+      ProcessUsbCommand(usb_command_buffer);
       usb_command_length = 0U;
     }
   }
