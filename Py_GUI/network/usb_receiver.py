@@ -41,6 +41,7 @@ class USBReceiver:
 
         self.lock = threading.Lock()
         self.io_lock = threading.Lock()
+        self.rx_lock = threading.Lock()
         self.running = False
         self.thread = None
         self.connected = False
@@ -79,7 +80,7 @@ class USBReceiver:
         if self.ser is not None and self.ser.is_open:
             return
 
-        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=0.05)
+        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=1.0)
         with self.io_lock:
             self.ser.reset_input_buffer()
         self.connected = True
@@ -117,12 +118,13 @@ class USBReceiver:
                 if not chunk:
                     continue
 
-                self._rx.extend(chunk)
                 self.total_bytes += len(chunk)
                 self.speed_window_bytes += len(chunk)
                 self._update_speed()
-                self._parse_text_messages()
-                self._parse_frames()
+                with self.rx_lock:
+                    self._rx.extend(chunk)
+                    self._parse_text_messages()
+                    self._parse_frames()
 
             except serial.SerialException as e:
                 self.error_count += 1
@@ -145,14 +147,28 @@ class USBReceiver:
     def _parse_frames(self):
         while True:
             if self._rx.startswith(self.TEXT_PREFIXES):
-                self._parse_text_messages()
-                continue
+                if self._parse_text_messages():
+                    continue
+                return
 
+            text_index = self._find_text_prefix()
             magic_index = self._rx.find(self.MAGIC)
             if magic_index < 0:
+                if text_index >= 0:
+                    del self._rx[:text_index]
+                    if self._parse_text_messages():
+                        continue
+                    return
+
                 keep = len(self.MAGIC) - 1
                 if len(self._rx) > keep:
                     del self._rx[:-keep]
+                return
+
+            if text_index >= 0 and text_index < magic_index:
+                del self._rx[:text_index]
+                if self._parse_text_messages():
+                    continue
                 return
 
             if magic_index > 0:
@@ -176,26 +192,47 @@ class USBReceiver:
             del self._rx[:frame_size]
             self._store_payload(payload)
 
+    def _find_text_prefix(self):
+        indexes = [self._rx.find(prefix) for prefix in self.TEXT_PREFIXES]
+        indexes = [index for index in indexes if index >= 0]
+        if indexes:
+            return min(indexes)
+        return -1
+
     def _parse_text_messages(self):
+        parsed_any = False
         while self._rx.startswith(self.TEXT_PREFIXES):
             line_end = self._rx.find(b"\n")
             if line_end < 0:
                 line_end = self._rx.find(b"\r")
             if line_end < 0:
-                return
+                return parsed_any
 
             raw_line = bytes(self._rx[:line_end]).strip()
             del self._rx[:line_end + 1]
             if raw_line:
-                self.text_messages.append(raw_line.decode("ascii", errors="replace"))
+                with self.lock:
+                    self.text_messages.append(raw_line.decode("ascii", errors="replace"))
+                parsed_any = True
+
+        return parsed_any
 
     def clear_text_messages(self):
-        self.text_messages.clear()
+        with self.lock:
+            self.text_messages.clear()
 
     def get_text_message(self):
-        if self.text_messages:
-            return self.text_messages.popleft()
+        with self.lock:
+            if self.text_messages:
+                return self.text_messages.popleft()
         return None
+
+    def clear_pending_bytes(self):
+        with self.rx_lock:
+            self._rx.clear()
+        with self.io_lock:
+            if self.ser is not None and self.ser.is_open:
+                self.ser.reset_input_buffer()
 
     def _store_payload(self, payload):
         samples = np.frombuffer(payload, dtype="<u4")
@@ -265,6 +302,24 @@ class USBReceiver:
             "buffer_size": self.buffer_size,
             "speed_mbps": self.speed_mbps,
         }
+
+    def reset_stats(self):
+        with self.lock:
+            self.adc1.fill(0)
+            self.adc2.fill(0)
+            self.text_messages.clear()
+        with self.rx_lock:
+            self._rx.clear()
+
+        self.packet_count = 0
+        self.total_samples = 0
+        self.total_bytes = 0
+        self.last_packet_time = None
+        self.error_count = 0
+        self.last_error = ""
+        self.speed_mbps = 0.0
+        self.speed_window_bytes = 0
+        self.speed_window_start = time.perf_counter()
 
     def stop(self):
         self.running = False

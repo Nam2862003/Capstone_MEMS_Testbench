@@ -27,12 +27,13 @@ class PCB_GUI(QWidget):
         layout = QVBoxLayout()
 
         # Navigation bar for pages
-        # Initialize both receivers; pages will select which one to use
+        # Initialize each transport separately; pages will select which pair to use.
         self.udp_receiver = UDPReceiver()
+        self.udp_sender = UDPSender()
         self.usb_receiver = USBReceiver()
         self.usb_sender = USBSender(receiver=self.usb_receiver)
         self.receiver = self.udp_receiver  # Default to UDP
-        self.sender = UDPSender()
+        self.sender = self.udp_sender
         nav = QHBoxLayout()
         self.back_btn = QPushButton("← Back")
         nav.addWidget(self.back_btn)
@@ -57,23 +58,43 @@ class PCB_GUI(QWidget):
 
         self.back_btn.clicked.connect(self.go_back)
 
+    def set_board_mode(self, mode):
+        self.udp_sender.set_board_mode(mode, send_now=False)
+        self.usb_sender.set_board_mode(mode, send_now=False)
+
+    def current_daq_page(self):
+        current = self.pages.currentWidget()
+        if current in (self.pr_page, self.pe_page):
+            return current
+        return None
+
+    def leave_current_daq_page(self, next_page=None):
+        current = self.current_daq_page()
+        if current is not None and current is not next_page:
+            current.disconnect_connected_transport(reset_outputs=True)
+
     def open_pr(self):
-        self.sender.set_board_mode("PR")
+        self.leave_current_daq_page(next_page=self.pr_page)
+        self.set_board_mode("PR")
+        self.pr_page.sync_board_transport_mode()
         self.pr_page.sync_actuator_transport_mode()
         self.pages.setCurrentIndex(1)
 
     def open_pe(self):
-        self.sender.set_board_mode("PE")
+        self.leave_current_daq_page(next_page=self.pe_page)
+        self.set_board_mode("PE")
+        self.pe_page.sync_board_transport_mode()
         self.pe_page.sync_actuator_transport_mode()
         self.pages.setCurrentIndex(2)
 
     def go_back(self):
-
+        self.leave_current_daq_page()
         self.pages.setCurrentIndex(0)
 
     def closeEvent(self, event):
+        self.leave_current_daq_page()
         self.udp_receiver.stop()
         self.usb_receiver.stop()
-        self.sender.close()
+        self.udp_sender.close()
         self.usb_sender.close()
         super().closeEvent(event)

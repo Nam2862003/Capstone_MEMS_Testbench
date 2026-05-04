@@ -131,6 +131,12 @@ QWidget#ActuatorField:hover {
     border: 1px solid #0078d4;
 }
 
+QWidget#ActuatorField:disabled {
+    background-color: #1a1a1a;
+    color: #777777;
+    border: 1px solid #333;
+}
+
 QLabel#ActuatorDisplay {
     background: transparent;
     border: none;
@@ -138,11 +144,19 @@ QLabel#ActuatorDisplay {
     font-size: 13px;
 }
 
+QLabel#ActuatorDisplay:disabled {
+    color: #777777;
+}
+
 QToolButton#ActuatorArrow {
     background: transparent;
     color: #e0e0e0;
     border: none;
     padding: 0 8px 0 4px;
+}
+
+QToolButton#ActuatorArrow:disabled {
+    color: #777777;
 }
 
 QToolButton#ActuatorArrow::menu-indicator {
@@ -206,6 +220,10 @@ QLabel {
     font-size: 15px;
 }
 
+QLabel:disabled {
+    color: #777777;
+}
+
 /* =========================
    TITLE LABEL
 ========================= */
@@ -230,6 +248,11 @@ QGroupBox {
     border-radius: 8px;
     margin-top: 15px;
     padding-top: 10px;
+}
+
+QGroupBox:disabled {
+    color: #777777;
+    border: 1px solid #333;
 }
 
 QGroupBox::title {

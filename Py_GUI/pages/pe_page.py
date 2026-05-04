@@ -74,4 +74,8 @@ class PEPage(BaseDAQPage):
         self.gain_code_label.setText(f"GPIO: {gain_code}")
 
     def apply_gain_selection(self):
-        self.sender.set_pe_gain(self.gain_slider.value())
+        gain_index = self.gain_slider.value()
+        for sender in (self.udp_sender, self.usb_sender):
+            if sender is not None:
+                send_now = sender is self.sender and self.active_transport_is_connected()
+                sender.set_pe_gain(gain_index, send_now=send_now)

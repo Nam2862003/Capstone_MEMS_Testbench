@@ -232,6 +232,22 @@ class UDPReceiver:
             "speed_mbps": self.speed_mbps,
         }
 
+    def reset_stats(self):
+        with self.lock:
+            self.adc1.fill(0)
+            self.adc2.fill(0)
+            self.text_messages.clear()
+
+        self.packet_count = 0
+        self.total_samples = 0
+        self.total_bytes = 0
+        self.last_packet_time = None
+        self.error_count = 0
+        self.last_error = ""
+        self.speed_mbps = 0.0
+        self.speed_window_bytes = 0
+        self.speed_window_start = time.perf_counter()
+
     def stop(self):
         self.running = False
 

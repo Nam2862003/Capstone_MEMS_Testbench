@@ -18,6 +18,17 @@ from lib.root_mean_square import compute_rms_amplitude
 class BaseDAQPage(QWidget):
     ALL_ADC_RESOLUTIONS = ["10-bit", "12-bit", "14-bit", "16-bit"]
     H7S_ADC_RESOLUTIONS = ["10-bit", "12-bit"]
+    DEFAULT_SAMPLING_RATE = "2500000"
+    DEFAULT_BUFFER_SIZE = "4096"
+    DEFAULT_ADC_RESOLUTION = "16-bit"
+    DEFAULT_CONSTANT_FREQ = "1000"
+    DEFAULT_EXTERNAL_REF_FREQ = "1000"
+    DEFAULT_START_FREQ = "10"
+    DEFAULT_STOP_FREQ = "100000"
+    DEFAULT_STEP_FREQ = "500"
+    DEFAULT_ACTUATOR = "STM32 DAC Output"
+    DEFAULT_OUTPUT_MODE = "Frequency Sweep"
+    DEFAULT_MEASUREMENT_METHOD = "Root Mean Square (RMS)"
 
     def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
 
@@ -29,6 +40,7 @@ class BaseDAQPage(QWidget):
         self.usb_sender = usb_sender
         self.receiver = receiver
         self.sender = sender
+        self.connected_transport = None
 
         layout = QVBoxLayout()
         self.tabs = QTabWidget()
@@ -49,8 +61,8 @@ class BaseDAQPage(QWidget):
         self.last_freq = None
         self.sweeping = False
         self.current_freq = None
-        self.selected_actuator = "Direct Digital Synthesis (DDS)"
-        self.selected_output_mode = "Frequency Sweep"
+        self.selected_actuator = self.DEFAULT_ACTUATOR
+        self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
         self.time_offset_1 = 0
         self.time_offset_2 = 0
         self.adc_running = False
@@ -79,21 +91,21 @@ class BaseDAQPage(QWidget):
         # =========================
 
         # Sampling rate
-        adc_group = QGroupBox("Signal Acquisition (ADC)")
+        self.adc_group = QGroupBox("Signal Acquisition (ADC)")
         adc_layout = QFormLayout()
-        self.sampling_rate_input = QLineEdit("2500000") 
+        self.sampling_rate_input = QLineEdit(self.DEFAULT_SAMPLING_RATE)
         adc_layout.addRow("Sampling Rate (Hz):", self.sampling_rate_input)
 
         # Buffer size
         self.buffer = QComboBox()
         self.buffer.addItems(["512", "1024", "2048", "4096", "8192", "16384"])
-        self.buffer.setCurrentText("4096")
+        self.buffer.setCurrentText(self.DEFAULT_BUFFER_SIZE)
         adc_layout.addRow("Buffer Size:", self.buffer)
 
         #Resolution (optional, for display purposes only)
         self.resolution = QComboBox()
         self.resolution.addItems(self.ALL_ADC_RESOLUTIONS)
-        self.resolution.setCurrentText("16-bit")
+        self.resolution.setCurrentText(self.DEFAULT_ADC_RESOLUTION)
         adc_layout.addRow("ADC Resolution:", self.resolution)
         
 
@@ -104,23 +116,23 @@ class BaseDAQPage(QWidget):
         button_layout.addWidget(self.start_adc, 0, 1)
         button_layout.addWidget(self.stop_adc, 0, 2)
         adc_layout.addRow(button_layout)
-        adc_group.setLayout(adc_layout)
-        adc_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.adc_group.setLayout(adc_layout)
+        self.adc_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         # =========================
         # 1.2 DAC SETTINGS
         # =========================
 
         # DAC frequency
-        dac_group = QGroupBox("Signal Generation (DAC)")
+        self.dac_group = QGroupBox("Signal Generation (DAC)")
         dac_layout = QFormLayout()
         # self.dac_freq_input = QLineEdit("1000")  # 1 kHz default
         # dac_layout.addRow("Frequency (Hz):", self.dac_freq_input)
         # Frequency inputs
-        self.constant_freq = QLineEdit("1000")
-        self.external_ref_freq = QLineEdit("1000")
-        self.start_freq = QLineEdit("10")
-        self.stop_freq = QLineEdit("100000")
-        self.step_freq = QLineEdit("500")
+        self.constant_freq = QLineEdit(self.DEFAULT_CONSTANT_FREQ)
+        self.external_ref_freq = QLineEdit(self.DEFAULT_EXTERNAL_REF_FREQ)
+        self.start_freq = QLineEdit(self.DEFAULT_START_FREQ)
+        self.stop_freq = QLineEdit(self.DEFAULT_STOP_FREQ)
+        self.step_freq = QLineEdit(self.DEFAULT_STEP_FREQ)
 
         self.frequency_stack = QStackedWidget()
 
@@ -197,8 +209,8 @@ class BaseDAQPage(QWidget):
         button_layout.addWidget(self.start_dac, 0, 0)
         button_layout.addWidget(self.stop_dac, 0, 1)
         dac_layout.addRow(button_layout)
-        dac_group.setLayout(dac_layout)
-        dac_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.dac_group.setLayout(dac_layout)
+        self.dac_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 
         # =========================
         # 1.3 COMMUNICATION SETTINGS
@@ -357,8 +369,8 @@ class BaseDAQPage(QWidget):
         # Vertical layout for ADC and DAC groups
         main_row = QHBoxLayout()
         main_row.setAlignment(Qt.AlignmentFlag.AlignTop)
-        main_row.addWidget(adc_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
-        main_row.addWidget(dac_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(self.adc_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(self.dac_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addLayout(main_row)
         for extra_group in self.build_setup_extension_groups():
             layout.addWidget(extra_group)
@@ -396,6 +408,7 @@ class BaseDAQPage(QWidget):
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
         self.update_actuator()
+        self.set_signal_controls_enabled(False)
         self.update_transport_panel()
         self.update_comm_status()
 
@@ -1066,8 +1079,8 @@ class BaseDAQPage(QWidget):
 
         parent = self.parent()
         while parent:
-            if transport_type == "udp" and hasattr(parent, "sender"):
-                return parent.sender
+            if transport_type == "udp" and hasattr(parent, "udp_sender"):
+                return parent.udp_sender
             if transport_type == "usb" and hasattr(parent, "usb_sender"):
                 return parent.usb_sender
             parent = parent.parent()
@@ -1095,6 +1108,10 @@ class BaseDAQPage(QWidget):
 
     def update_transport_panel(self):
         transport_name = self.transport_selector.currentText()
+        selected_transport = "usb" if transport_name == "HS USB" else "udp"
+        if self.connected_transport is not None and self.connected_transport != selected_transport:
+            self.disconnect_connected_transport(reset_outputs=True)
+
         if transport_name == "Ethernet (UDP)":
             self.receiver = self.get_parent_receiver("udp")
             self.sender = self.get_parent_sender("udp")
@@ -1103,6 +1120,180 @@ class BaseDAQPage(QWidget):
             self.receiver = self.get_parent_receiver("usb")
             self.sender = self.get_parent_sender("usb")
             self.comm_stack.setCurrentIndex(1)
+
+        self.update_comm_status()
+
+    def active_transport_key(self):
+        if not hasattr(self, "transport_selector"):
+            return "udp"
+        if self.transport_selector.currentText() == "HS USB":
+            return "usb"
+        return "udp"
+
+    def active_transport_is_connected(self):
+        return self.connected_transport == self.active_transport_key()
+
+    def set_signal_controls_enabled(self, enabled):
+        self.signal_controls_enabled = enabled
+
+        if hasattr(self, "adc_group"):
+            self.adc_group.setEnabled(enabled)
+        if hasattr(self, "dac_group"):
+            self.dac_group.setEnabled(enabled)
+
+        if enabled:
+            self.update_actuator()
+        else:
+            if hasattr(self, "tabs"):
+                self.tabs.setTabEnabled(1, False)
+                self.tabs.setTabEnabled(2, False)
+                if self.tabs.currentIndex() in (1, 2):
+                    self.tabs.setCurrentIndex(0)
+
+    def sync_board_transport_mode(self):
+        if not hasattr(self, "sender") or not self.active_transport_is_connected():
+            return
+        self.sender.sync_board_mode()
+
+    def set_combo_text_silently(self, combo, text):
+        combo.blockSignals(True)
+        combo.setCurrentText(text)
+        combo.blockSignals(False)
+
+    def set_checkbox_silently(self, checkbox, checked):
+        checkbox.blockSignals(True)
+        checkbox.setChecked(checked)
+        checkbox.blockSignals(False)
+
+    def reset_transport_stats(self):
+        for endpoint in (self.udp_sender, self.usb_sender, self.udp_receiver, self.usb_receiver):
+            if endpoint is not None and hasattr(endpoint, "reset_stats"):
+                endpoint.reset_stats()
+
+    def reset_status_labels(self):
+        if hasattr(self, "comm_status_label"):
+            self.comm_status_label.setText("Not connected")
+        if hasattr(self, "usb_status_label"):
+            self.usb_status_label.setText("Not connected")
+
+    def reset_gui_defaults(self):
+        self.detected_board = None
+        if hasattr(self, "detected_board_label"):
+            self.detected_board_label.setText("No device detected yet")
+        if hasattr(self, "transport_selector"):
+            self.set_hs_usb_enabled(True)
+
+        self.selected_actuator = self.DEFAULT_ACTUATOR
+        self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
+        self._refresh_actuator_menu_state()
+
+        if hasattr(self, "sampling_rate_input"):
+            self.sampling_rate_input.setText(self.DEFAULT_SAMPLING_RATE)
+        if hasattr(self, "buffer"):
+            self.set_combo_text_silently(self.buffer, self.DEFAULT_BUFFER_SIZE)
+        if hasattr(self, "resolution"):
+            self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, self.DEFAULT_ADC_RESOLUTION)
+        if hasattr(self, "mode_selector"):
+            self.set_combo_text_silently(self.mode_selector, self.DEFAULT_MEASUREMENT_METHOD)
+
+        if hasattr(self, "constant_freq"):
+            self.constant_freq.setText(self.DEFAULT_CONSTANT_FREQ)
+        if hasattr(self, "external_ref_freq"):
+            self.external_ref_freq.setText(self.DEFAULT_EXTERNAL_REF_FREQ)
+        if hasattr(self, "start_freq"):
+            self.start_freq.setText(self.DEFAULT_START_FREQ)
+        if hasattr(self, "stop_freq"):
+            self.stop_freq.setText(self.DEFAULT_STOP_FREQ)
+        if hasattr(self, "step_freq"):
+            self.step_freq.setText(self.DEFAULT_STEP_FREQ)
+        if hasattr(self, "auto_ref_freq_checkbox"):
+            self.set_checkbox_silently(self.auto_ref_freq_checkbox, False)
+
+        if hasattr(self, "gain_slider"):
+            self.gain_slider.blockSignals(True)
+            self.gain_slider.setValue(0)
+            self.gain_slider.blockSignals(False)
+            self.update_gain_display(0)
+
+        self.current_freq = None
+        self.adc_running = False
+        self.sweeping = False
+        if hasattr(self, "tabs"):
+            self.tabs.setCurrentIndex(0)
+        if hasattr(self, "reset_sweep") and hasattr(self, "curve1"):
+            self.reset_sweep()
+
+        if hasattr(self.receiver, "set_buffer_size"):
+            self.receiver.set_buffer_size(int(self.DEFAULT_BUFFER_SIZE))
+
+        self.update_actuator()
+        self.set_signal_controls_enabled(False)
+        self.reset_transport_stats()
+        self.reset_status_labels()
+
+    def reset_sender_defaults(self, send_now=True):
+        if send_now and hasattr(self.sender, "reset_outputs_to_default"):
+            self.sender.reset_outputs_to_default()
+
+        for sender in (self.udp_sender, self.usb_sender):
+            if sender is not None:
+                sender.set_board_mode("PE", send_now=False)
+                sender.set_actuator_mode("STM32", send_now=False)
+                if hasattr(sender, "set_pe_gain"):
+                    sender.set_pe_gain(0, send_now=False)
+
+        self.adc_running = False
+        self.sweeping = False
+
+    def disconnect_connected_transport(self, reset_outputs=True):
+        transport = self.connected_transport
+        if transport == "udp":
+            self.receiver = self.get_parent_receiver("udp")
+            self.sender = self.get_parent_sender("udp")
+        elif transport == "usb":
+            self.receiver = self.get_parent_receiver("usb")
+            self.sender = self.get_parent_sender("usb")
+        else:
+            self.reset_sender_defaults(send_now=False)
+            if reset_outputs:
+                self.reset_gui_defaults()
+            else:
+                self.set_signal_controls_enabled(False)
+            return
+
+        if reset_outputs:
+            self.reset_sender_defaults(send_now=True)
+        else:
+            self.adc_running = False
+            self.sweeping = False
+
+        self.sender.close()
+        self.receiver.stop()
+        self.connected_transport = None
+        if reset_outputs:
+            self.reset_gui_defaults()
+        else:
+            self.set_signal_controls_enabled(False)
+
+    def set_hs_usb_enabled(self, enabled, reason=""):
+        hs_usb_index = self.transport_selector.findText("HS USB")
+        if hs_usb_index < 0:
+            return
+
+        item = self.transport_selector.model().item(hs_usb_index)
+        if item is not None:
+            item.setEnabled(enabled)
+            item.setToolTip("" if enabled else reason)
+
+        if hasattr(self, "usb_connect_btn"):
+            self.usb_connect_btn.setEnabled(enabled)
+        if hasattr(self, "usb_refresh_ports_btn"):
+            self.usb_refresh_ports_btn.setEnabled(enabled)
+
+        if not enabled and self.transport_selector.currentIndex() == hs_usb_index:
+            ethernet_index = self.transport_selector.findText("Ethernet (UDP)")
+            if ethernet_index >= 0:
+                self.transport_selector.setCurrentIndex(ethernet_index)
 
     def set_resolution_choices(self, choices, default_resolution):
         current = self.resolution.currentText()
@@ -1122,11 +1313,17 @@ class BaseDAQPage(QWidget):
         normalized = "".join(reply.strip().upper().split()).replace("-", "_")
         self.detected_board_label.setText(reply.strip())
 
-        if "H7S3L8" in normalized or "H7SL8" in normalized:
+        if "H723ZG" in normalized:
+            self.detected_board = "Nucleo H723ZG"
+            self.set_hs_usb_enabled(False, "Nucleo H723ZG does not support HS USB.")
+            self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, "16-bit")
+        elif "H7S3L8" in normalized or "H7SL8" in normalized:
             self.detected_board = "Nucleo H7S3L8"
+            self.set_hs_usb_enabled(True)
             self.set_resolution_choices(self.H7S_ADC_RESOLUTIONS, "12-bit")
         else:
-            self.detected_board = "Nucleo H723ZG"
+            self.detected_board = reply.strip()
+            self.set_hs_usb_enabled(True)
             self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, "16-bit")
 
     def detect_board(self):
@@ -1147,6 +1344,7 @@ class BaseDAQPage(QWidget):
                 self.sender.open()
             except Exception as exc:
                 self.detected_board = None
+                self.set_hs_usb_enabled(True)
                 self.detected_board_label.setText(f"Detection setup error: {exc}")
                 return
         else:
@@ -1166,31 +1364,36 @@ class BaseDAQPage(QWidget):
                 if hasattr(self.sender, "attach_receiver"):
                     self.sender.attach_receiver(self.receiver)
 
-                if was_running and hasattr(self.sender, "stop_aq"):
-                    self.sender.stop_aq()
-                    self.adc_running = False
-                    time.sleep(0.05)
-
                 if (self.receiver.port != usb_port) or (int(self.receiver.baudrate) != baudrate_value):
                     self.receiver.rebind(usb_port, baudrate=baudrate_value)
                 self.sender.port = usb_port
                 self.sender.baudrate = baudrate_value
                 self.receiver.start()
                 self.sender.open()
+
+                if hasattr(self.sender, "stop_aq"):
+                    self.sender.stop_aq()
+                    self.adc_running = False
+                    time.sleep(0.05)
             except Exception as exc:
                 self.detected_board = None
+                self.set_hs_usb_enabled(True)
                 self.detected_board_label.setText(f"USB detect error: {exc}")
                 return
 
         if hasattr(self.receiver, "clear_text_messages"):
             self.receiver.clear_text_messages()
-        if hasattr(self.receiver, "_rx"):
+        if hasattr(self.receiver, "clear_pending_bytes"):
+            self.receiver.clear_pending_bytes()
+        elif hasattr(self.receiver, "_rx"):
             self.receiver._rx.clear()
 
         if not self.sender.send("BOARD?"):
+            self.detected_board = None
+            self.set_hs_usb_enabled(True)
             self.detected_board_label.setText("No device detected yet")
             if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
-                if self.sender.start_aq():
+                if not self.adc_running and self.sender.start_aq():
                     self.adc_running = True
             return
 
@@ -1208,10 +1411,11 @@ class BaseDAQPage(QWidget):
             self.apply_board_detection(reply)
         else:
             self.detected_board = None
+            self.set_hs_usb_enabled(True)
             self.detected_board_label.setText("No reply to BOARD? Check IP, ports, and flashed firmware.")
 
         if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
-            if self.sender.start_aq():
+            if not self.adc_running and self.sender.start_aq():
                 self.adc_running = True
 
     def build_actuator_menu(self):
@@ -1281,18 +1485,29 @@ class BaseDAQPage(QWidget):
     def sync_actuator_transport_mode(self):
         if not hasattr(self, "sender"):
             return
-        self.sender.set_actuator_mode(self.current_actuator_transport_mode())
+
+        mode = self.current_actuator_transport_mode()
+        for sender in (self.udp_sender, self.usb_sender):
+            if sender is not None:
+                send_now = sender is self.sender and self.active_transport_is_connected()
+                sender.set_actuator_mode(mode, send_now=send_now)
 
     def connect_transport(self):
         transport_mode = self.transport_selector.currentText()
+
+        if transport_mode == "HS USB" and self.detected_board == "Nucleo H723ZG":
+            QMessageBox.warning(self, "HS USB Unavailable", "Nucleo H723ZG does not support HS USB. Use Ethernet (UDP).")
+            ethernet_index = self.transport_selector.findText("Ethernet (UDP)")
+            if ethernet_index >= 0:
+                self.transport_selector.setCurrentIndex(ethernet_index)
+            return
         
         if transport_mode == "Ethernet (UDP)":
             try:
                 board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
-                self.sender.configure(ip=board_ip, port=cmd_port)
-                # Switch to UDP receiver
                 self.receiver = self.get_parent_receiver("udp")
                 self.sender = self.get_parent_sender("udp")
+                self.sender.configure(ip=board_ip, port=cmd_port)
                 self.receiver.rebind(data_port, host=local_ip)
                 self.sender.open()
                 self.sender.sync_board_mode()
@@ -1300,8 +1515,11 @@ class BaseDAQPage(QWidget):
                 if hasattr(self.sender, "sync_pe_gain"):
                     self.sender.sync_pe_gain()
                 self.receiver.start()
+                self.adc_running = False
                 if self.sender.start_aq():
                     self.adc_running = True
+                self.connected_transport = "udp"
+                self.set_signal_controls_enabled(True)
                 self.update_comm_status()
             except Exception as exc:
                 QMessageBox.warning(self, "Connection Error", str(exc))
@@ -1328,26 +1546,23 @@ class BaseDAQPage(QWidget):
                     self.receiver.rebind(usb_port, baudrate=baudrate_value)
                 self.receiver.set_buffer_size(int(self.buffer.currentText()))
                 self.receiver.start()
+                self.sender.open()
+                self.sender.sync_board_mode()
+                self.sender.sync_actuator_mode()
+                if hasattr(self.sender, "sync_pe_gain"):
+                    self.sender.sync_pe_gain()
                 self.adc_running = False
+                if self.sender.start_aq():
+                    self.adc_running = True
+                self.connected_transport = "usb"
+                self.set_signal_controls_enabled(True)
                 self.update_comm_status()
                 QMessageBox.information(self, "USB Connected", f"Connected to {usb_port} at {baudrate} bps")
             except Exception as exc:
                 QMessageBox.warning(self, "USB Connection Error", str(exc))
 
     def disconnect_transport(self):
-        transport_mode = self.transport_selector.currentText()
-        
-        if transport_mode == "Ethernet (UDP)":
-            self.sender = self.get_parent_sender("udp")
-            self.adc_running = False
-            self.sender.close()
-            self.receiver.stop()
-        elif transport_mode == "HS USB":
-            self.sender = self.get_parent_sender("usb")
-            self.adc_running = False
-            self.sender.close()
-            self.receiver.stop()
-        
+        self.disconnect_connected_transport(reset_outputs=True)
         self.update_comm_status()
 
     def format_age_seconds(self, timestamp):
@@ -1357,6 +1572,10 @@ class BaseDAQPage(QWidget):
 
     def update_comm_status(self):
         if not hasattr(self, "comm_status_label"):
+            return
+
+        if self.connected_transport is None:
+            self.reset_status_labels()
             return
 
         transport_mode = self.transport_selector.currentText() if hasattr(self, "transport_selector") else "Ethernet (UDP)"
@@ -1407,6 +1626,8 @@ class BaseDAQPage(QWidget):
         self.sender.set_buffer(value)
         self.receiver.set_buffer_size(int(value))
     def start_acquisition(self):
+        if self.adc_running:
+            return
         if self.sender.start_aq():
             self.adc_running = True
 
@@ -1528,6 +1749,12 @@ class BaseDAQPage(QWidget):
             self.stop_freq.setEnabled(sweep_mode)
             self.step_freq.setEnabled(sweep_mode)
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
+
+        if not getattr(self, "signal_controls_enabled", True):
+            self.tabs.setTabEnabled(SWEEP_TAB, False)
+            self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, False)
+            if self.tabs.currentIndex() in (SWEEP_TAB, EXTERNAL_SIGNAL_TAB):
+                self.tabs.setCurrentIndex(SETUP_TAB)
 
     def get_active_plot_widgets(self):
         actuator = self.current_actuator()
