@@ -697,7 +697,7 @@ static void SetAdcSamplingRate(uint32_t sample_rate_hz)
   uint32_t period;
   uint8_t was_running = adc_running;
 
-  if ((sample_rate_hz < 1000U) || (sample_rate_hz > 2000000U))
+  if ((sample_rate_hz < 1000U) || (sample_rate_hz > 3000000U))
   {
     return;
   }

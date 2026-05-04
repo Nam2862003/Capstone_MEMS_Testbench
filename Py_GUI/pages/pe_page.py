@@ -13,8 +13,8 @@ class PEPage(BaseDAQPage):
     ]
     GAIN_MARKS = ["1x", "7.5x", "10x", "20x"]
 
-    def __init__(self, receiver, sender):
-        super().__init__(receiver, sender)
+    def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
+        super().__init__(receiver, sender, usb_receiver, usb_sender)
 
     def build_setup_sidebar_group(self):
         gain_group = QGroupBox("Gain Selection (PE)")

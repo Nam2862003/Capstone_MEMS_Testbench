@@ -1,6 +1,7 @@
 ﻿import sys
 import threading
 import time
+from collections import deque
 
 import numpy as np
 import serial
@@ -23,6 +24,7 @@ class USBReceiver:
 
     MAGIC = b"ADCB"
     HEADER_SIZE = 8
+    TEXT_PREFIXES = (b"BOARD", b"CAPS", b"FW")
 
     def __init__(self, port="COM9", baudrate=115200, buffer_size=2000, resolution_bits=12):
         self.port = port
@@ -38,6 +40,7 @@ class USBReceiver:
         self.set_resolution(resolution_bits)
 
         self.lock = threading.Lock()
+        self.io_lock = threading.Lock()
         self.running = False
         self.thread = None
         self.connected = False
@@ -51,6 +54,7 @@ class USBReceiver:
         self.speed_window_bytes = 0
         self.speed_window_start = time.perf_counter()
         self._rx = bytearray()
+        self.text_messages = deque(maxlen=16)
 
     @staticmethod
     def available_ports():
@@ -75,8 +79,9 @@ class USBReceiver:
         if self.ser is not None and self.ser.is_open:
             return
 
-        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05)
-        self.ser.reset_input_buffer()
+        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=0.05)
+        with self.io_lock:
+            self.ser.reset_input_buffer()
         self.connected = True
         self.last_error = ""
         print(f"[USB] Listening on {self.port}")
@@ -107,7 +112,8 @@ class USBReceiver:
                     time.sleep(0.05)
                     continue
 
-                chunk = self.ser.read(65536)
+                with self.io_lock:
+                    chunk = self.ser.read(65536)
                 if not chunk:
                     continue
 
@@ -115,6 +121,7 @@ class USBReceiver:
                 self.total_bytes += len(chunk)
                 self.speed_window_bytes += len(chunk)
                 self._update_speed()
+                self._parse_text_messages()
                 self._parse_frames()
 
             except serial.SerialException as e:
@@ -137,6 +144,10 @@ class USBReceiver:
 
     def _parse_frames(self):
         while True:
+            if self._rx.startswith(self.TEXT_PREFIXES):
+                self._parse_text_messages()
+                continue
+
             magic_index = self._rx.find(self.MAGIC)
             if magic_index < 0:
                 keep = len(self.MAGIC) - 1
@@ -164,6 +175,27 @@ class USBReceiver:
             payload = bytes(self._rx[self.HEADER_SIZE:frame_size])
             del self._rx[:frame_size]
             self._store_payload(payload)
+
+    def _parse_text_messages(self):
+        while self._rx.startswith(self.TEXT_PREFIXES):
+            line_end = self._rx.find(b"\n")
+            if line_end < 0:
+                line_end = self._rx.find(b"\r")
+            if line_end < 0:
+                return
+
+            raw_line = bytes(self._rx[:line_end]).strip()
+            del self._rx[:line_end + 1]
+            if raw_line:
+                self.text_messages.append(raw_line.decode("ascii", errors="replace"))
+
+    def clear_text_messages(self):
+        self.text_messages.clear()
+
+    def get_text_message(self):
+        if self.text_messages:
+            return self.text_messages.popleft()
+        return None
 
     def _store_payload(self, payload):
         samples = np.frombuffer(payload, dtype="<u4")
@@ -251,34 +283,34 @@ class USBReceiver:
 
         print("[USB] Receiver stopped")
 
-def _print_test_loop(port="COM9", baudrate=115200, resolution_bits=12, vref=3.3):
-    rx = USBReceiver(port=port, baudrate=baudrate, buffer_size=2000, resolution_bits=resolution_bits)
-    print(f"[USB TEST] Available ports: {USBReceiver.available_ports()}")
-    print(f"[USB TEST] Opening {port} at {baudrate} baud")
-    rx.start()
+# def _print_test_loop(port="COM9", baudrate=115200, resolution_bits=12, vref=3.3):
+#     rx = USBReceiver(port=port, baudrate=baudrate, buffer_size=2000, resolution_bits=resolution_bits)
+#     print(f"[USB TEST] Available ports: {USBReceiver.available_ports()}")
+#     print(f"[USB TEST] Opening {port} at {baudrate} baud")
+#     rx.start()
 
-    try:
-        while True:
-            raw1, raw2 = rx.get_data()
-            adc1_v, adc2_v = rx.get_data_volts(vref=vref)
-            status = rx.get_status()
+#     try:
+#         while True:
+#             raw1, raw2 = rx.get_data()
+#             adc1_v, adc2_v = rx.get_data_volts(vref=vref)
+#             status = rx.get_status()
 
-            print(
-                f"ADC1={int(raw1[-1]):4d} ({adc1_v[-1]:.4f} V) | "
-                f"ADC2={int(raw2[-1]):4d} ({adc2_v[-1]:.4f} V) | "
-                f"frames={status['packet_count']} samples={status['total_samples']} "
-                f"speed={status['speed_mbps']:.3f} Mbps"
-            )
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n[USB TEST] Stopping")
-    finally:
-        rx.stop()
+#             print(
+#                 f"ADC1={int(raw1[-1]):4d} ({adc1_v[-1]:.4f} V) | "
+#                 f"ADC2={int(raw2[-1]):4d} ({adc2_v[-1]:.4f} V) | "
+#                 f"frames={status['packet_count']} samples={status['total_samples']} "
+#                 f"speed={status['speed_mbps']:.3f} Mbps"
+#             )
+#             time.sleep(0.5)
+#     except KeyboardInterrupt:
+#         print("\n[USB TEST] Stopping")
+#     finally:
+#         rx.stop()
 
 
-if __name__ == "__main__":
-    port = sys.argv[1] if len(sys.argv) > 1 else "COM9"
-    baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else 115200
-    _print_test_loop(port=port, baudrate=baudrate)
+# if __name__ == "__main__":
+#     port = sys.argv[1] if len(sys.argv) > 1 else "COM9"
+#     baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else 115200
+#     _print_test_loop(port=port, baudrate=baudrate)
 
 

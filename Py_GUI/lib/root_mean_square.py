@@ -15,5 +15,6 @@ def compute_rms_amplitude(adc1, adc2):
     """
     v_ref = rms_amplitude(adc1)
     v_sig = rms_amplitude(adc2)
-    amp_dB = 20 * np.log10(v_sig / (v_ref + 1e-12))  # add small value to avoid log(0)
+    eps = 1e-12
+    amp_dB = 20 * np.log10((v_sig + eps) / (v_ref + eps))
     return amp_dB, v_sig, v_ref

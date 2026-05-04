@@ -19,10 +19,14 @@ class BaseDAQPage(QWidget):
     ALL_ADC_RESOLUTIONS = ["10-bit", "12-bit", "14-bit", "16-bit"]
     H7S_ADC_RESOLUTIONS = ["10-bit", "12-bit"]
 
-    def __init__(self, receiver, sender):
+    def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
 
         super().__init__()
 
+        self.udp_receiver = receiver
+        self.udp_sender = sender
+        self.usb_receiver = usb_receiver
+        self.usb_sender = usb_sender
         self.receiver = receiver
         self.sender = sender
 
@@ -203,42 +207,76 @@ class BaseDAQPage(QWidget):
         comm_group = QGroupBox("Communication Settings")
         comm_layout = QVBoxLayout()
 
+        compact_field_width = 240
+        compact_button_width = 140
+        comm_label_width = 170
+
+        def make_comm_label(text):
+            label = QLabel(text)
+            label.setFixedWidth(comm_label_width)
+            return label
+
         self.transport_selector = QComboBox()
         self.transport_selector.addItems(["Ethernet (UDP)", "HS USB"])
-        comm_layout.addWidget(self.transport_selector)
+        self.transport_selector.setFixedWidth(compact_field_width)
+        top_comm_form = QFormLayout()
+        top_comm_form.setContentsMargins(0, 0, 0, 0)
+        top_comm_form.setHorizontalSpacing(8)
+        top_comm_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        transport_row = QHBoxLayout()
+        transport_row.setContentsMargins(0, 0, 0, 0)
+        transport_row.setSpacing(8)
+        transport_row.addWidget(self.transport_selector, 0, Qt.AlignmentFlag.AlignLeft)
+        transport_row.addStretch()
+        top_comm_form.addRow(make_comm_label("Communication Type:"), transport_row)
 
         board_row = QHBoxLayout()
-        board_row.addWidget(QLabel("Detected Board:"))
-        self.detected_board_label = QLabel("No device detected yet")
-        self.detected_board_label.setObjectName("MutedLabel")
-        board_row.addWidget(self.detected_board_label, 1)
+        board_row.setContentsMargins(0, 0, 0, 0)
+        board_row.setSpacing(8)
+        self.detected_board_label = QLineEdit("No device detected yet")
+        self.detected_board_label.setReadOnly(True)
+        self.detected_board_label.setFixedWidth(compact_field_width)
+        board_row.addWidget(self.detected_board_label, 0, Qt.AlignmentFlag.AlignLeft)
         self.detect_board_btn = QPushButton("Detect Board")
-        board_row.addWidget(self.detect_board_btn)
-        comm_layout.addLayout(board_row)
+        self.detect_board_btn.setFixedWidth(compact_button_width)
+        board_row.addWidget(self.detect_board_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        board_row.addStretch()
+        top_comm_form.addRow(make_comm_label("Board:"), board_row)
+        comm_layout.addLayout(top_comm_form)
 
         self.comm_stack = QStackedWidget()
 
         ethernet_page = QWidget()
         ethernet_layout = QVBoxLayout()
+        ethernet_layout.setContentsMargins(0, 0, 0, 0)
+        ethernet_layout.setSpacing(8)
         comm_form = QFormLayout()
+        comm_form.setContentsMargins(0, 0, 0, 0)
+        comm_form.setHorizontalSpacing(8)
+        comm_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self.target_ip_input = QLineEdit(self.sender.ip)
-        comm_form.addRow("Board IP:", self.target_ip_input)
+        self.target_ip_input.setFixedWidth(compact_field_width)
+        comm_form.addRow(make_comm_label("Board IP:"), self.target_ip_input)
 
         self.local_ip_input = QLineEdit(self.receiver.display_host)
-        comm_form.addRow("PC IP:", self.local_ip_input)
+        self.local_ip_input.setFixedWidth(compact_field_width)
+        comm_form.addRow(make_comm_label("PC IP:"), self.local_ip_input)
 
         self.command_port_input = QLineEdit(str(self.sender.port))
         self.command_port_input.setValidator(QIntValidator(1, 65535, self))
-        comm_form.addRow("Command Port:", self.command_port_input)
+        self.command_port_input.setFixedWidth(compact_field_width)
+        comm_form.addRow(make_comm_label("Command Port:"), self.command_port_input)
 
         self.data_port_input = QLineEdit(str(self.receiver.port))
         self.data_port_input.setValidator(QIntValidator(1, 65535, self))
-        comm_form.addRow("Data Port:", self.data_port_input)
+        self.data_port_input.setFixedWidth(compact_field_width)
+        comm_form.addRow(make_comm_label("Data Port:"), self.data_port_input)
 
         self.comm_status_label = QLabel()
         self.comm_status_label.setWordWrap(True)
-        comm_form.addRow("Status:", self.comm_status_label)
+        comm_form.addRow(make_comm_label("Status:"), self.comm_status_label)
 
         comm_button_row = QHBoxLayout()
         self.connect_comm_btn = QPushButton("Connect")
@@ -252,20 +290,53 @@ class BaseDAQPage(QWidget):
 
         usb_page = QWidget()
         usb_layout = QVBoxLayout()
+        usb_layout.setContentsMargins(0, 0, 0, 0)
+        usb_layout.setSpacing(8)
         usb_form = QFormLayout()
-        self.usb_mode_label = QLabel("USB HS transport UI placeholder for future firmware support.")
-        self.usb_mode_label.setWordWrap(True)
-        self.usb_device_input = QLineEdit("Not implemented yet")
-        self.usb_device_input.setReadOnly(True)
-        self.usb_endpoint_input = QLineEdit("Reserved for future use")
-        self.usb_endpoint_input.setReadOnly(True)
-        self.usb_status_label = QLabel("USB HS settings will appear here once the firmware path is ready.")
+        usb_form.setContentsMargins(0, 0, 0, 0)
+        usb_form.setHorizontalSpacing(8)
+        usb_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        
+        # USB COM Port selector
+        self.usb_port_input = QComboBox()
+        self.usb_port_input.addItems(["COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9"])
+        self.usb_port_input.setEditable(True)
+        self.usb_port_input.setFixedWidth(compact_field_width)
+        self.usb_refresh_ports_btn = QPushButton("Refresh Ports")
+        self.usb_refresh_ports_btn.setFixedWidth(compact_button_width)
+        port_row = QHBoxLayout()
+        port_row.setContentsMargins(0, 0, 0, 0)
+        port_row.setSpacing(8)
+        port_row.addWidget(self.usb_port_input, 0, Qt.AlignmentFlag.AlignLeft)
+        port_row.addWidget(self.usb_refresh_ports_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        port_row.addStretch()
+        usb_form.addRow(make_comm_label("COM Port:"), port_row)
+        
+        # USB Baudrate
+        self.usb_baudrate_input = QLineEdit("115200")
+        self.usb_baudrate_input.setFixedWidth(compact_field_width)
+        baudrate_row = QHBoxLayout()
+        baudrate_row.setContentsMargins(0, 0, 0, 0)
+        baudrate_row.setSpacing(8)
+        baudrate_row.addWidget(self.usb_baudrate_input, 0, Qt.AlignmentFlag.AlignLeft)
+        baudrate_row.addStretch()
+        usb_form.addRow(make_comm_label("Baudrate (bps):"), baudrate_row)
+        
+        # USB Status
+        self.usb_status_label = QLabel("Not connected")
         self.usb_status_label.setWordWrap(True)
-        usb_form.addRow("Info:", self.usb_mode_label)
-        usb_form.addRow("Device:", self.usb_device_input)
-        usb_form.addRow("Endpoint:", self.usb_endpoint_input)
-        usb_form.addRow("Status:", self.usb_status_label)
+        usb_form.addRow(make_comm_label("Status:"), self.usb_status_label)
+        
+        # USB Control buttons
+        usb_button_row = QHBoxLayout()
+        self.usb_connect_btn = QPushButton("Connect")
+        self.usb_disconnect_btn = QPushButton("Disconnect")
+        usb_button_row.addWidget(self.usb_connect_btn)
+        usb_button_row.addWidget(self.usb_disconnect_btn)
+        usb_form.addRow(usb_button_row)
+        
         usb_layout.addLayout(usb_form)
+        usb_layout.addStretch()
         usb_page.setLayout(usb_layout)
 
         self.comm_stack.addWidget(ethernet_page)
@@ -316,9 +387,12 @@ class BaseDAQPage(QWidget):
         self.stop_dac.clicked.connect(self.stop_generation)
         self.connect_comm_btn.clicked.connect(self.connect_transport)
         self.disconnect_comm_btn.clicked.connect(self.disconnect_transport)
+        self.usb_connect_btn.clicked.connect(self.connect_transport)
+        self.usb_disconnect_btn.clicked.connect(self.disconnect_transport)
         self.transport_selector.currentIndexChanged.connect(self.update_transport_panel)
         self.detect_board_btn.clicked.connect(lambda: self.detect_board())
         self.auto_ref_freq_checkbox.toggled.connect(self.update_actuator)
+        self.usb_refresh_ports_btn.clicked.connect(self.refresh_usb_ports)
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
         self.update_actuator()
@@ -966,11 +1040,68 @@ class BaseDAQPage(QWidget):
 
         return board_ip, local_ip, int(cmd_port_text), int(data_port_text)
 
+    def get_parent_receiver(self, transport_type):
+        """Get the appropriate receiver from parent window"""
+        if transport_type == "udp" and getattr(self, "udp_receiver", None) is not None:
+            return self.udp_receiver
+        if transport_type == "usb" and getattr(self, "usb_receiver", None) is not None:
+            return self.usb_receiver
+
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'udp_receiver') and hasattr(parent, 'usb_receiver'):
+                if transport_type == "udp":
+                    return parent.udp_receiver
+                elif transport_type == "usb":
+                    return parent.usb_receiver
+            parent = parent.parent()
+        raise RuntimeError(f"Could not find parent with {transport_type} receiver")
+
+    def get_parent_sender(self, transport_type):
+        """Get the appropriate sender from parent window"""
+        if transport_type == "udp" and getattr(self, "udp_sender", None) is not None:
+            return self.udp_sender
+        if transport_type == "usb" and getattr(self, "usb_sender", None) is not None:
+            return self.usb_sender
+
+        parent = self.parent()
+        while parent:
+            if transport_type == "udp" and hasattr(parent, "sender"):
+                return parent.sender
+            if transport_type == "usb" and hasattr(parent, "usb_sender"):
+                return parent.usb_sender
+            parent = parent.parent()
+        raise RuntimeError(f"Could not find parent with {transport_type} sender")
+
+    def refresh_usb_ports(self):
+        """Refresh available USB COM ports"""
+        try:
+            from network.usb_receiver import USBReceiver
+            available_ports = USBReceiver.available_ports()
+            
+            current_port = self.usb_port_input.currentText()
+            self.usb_port_input.clear()
+            
+            if available_ports:
+                self.usb_port_input.addItems(available_ports)
+                if current_port in available_ports:
+                    self.usb_port_input.setCurrentText(current_port)
+                QMessageBox.information(self, "USB Ports", f"Found {len(available_ports)} COM port(s)")
+            else:
+                self.usb_port_input.addItem("No ports found")
+                QMessageBox.warning(self, "USB Ports", "No COM ports found")
+        except Exception as e:
+            QMessageBox.warning(self, "USB Port Error", f"Error refreshing ports: {str(e)}")
+
     def update_transport_panel(self):
         transport_name = self.transport_selector.currentText()
         if transport_name == "Ethernet (UDP)":
+            self.receiver = self.get_parent_receiver("udp")
+            self.sender = self.get_parent_sender("udp")
             self.comm_stack.setCurrentIndex(0)
         else:
+            self.receiver = self.get_parent_receiver("usb")
+            self.sender = self.get_parent_sender("usb")
             self.comm_stack.setCurrentIndex(1)
 
     def set_resolution_choices(self, choices, default_resolution):
@@ -1007,6 +1138,8 @@ class BaseDAQPage(QWidget):
 
         if self.transport_selector.currentText() == "Ethernet (UDP)":
             try:
+                self.receiver = self.get_parent_receiver("udp")
+                self.sender = self.get_parent_sender("udp")
                 board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
                 self.sender.configure(ip=board_ip, port=cmd_port)
                 self.receiver.rebind(data_port, host=local_ip)
@@ -1016,12 +1149,49 @@ class BaseDAQPage(QWidget):
                 self.detected_board = None
                 self.detected_board_label.setText(f"Detection setup error: {exc}")
                 return
+        else:
+            try:
+                was_running = self.adc_running
+                usb_port = self.usb_port_input.currentText().strip()
+                baudrate = self.usb_baudrate_input.text().strip()
+                baudrate_value = int(baudrate)
+
+                if not usb_port:
+                    raise ValueError("USB COM port cannot be empty.")
+                if not baudrate:
+                    raise ValueError("Baudrate cannot be empty.")
+
+                self.receiver = self.get_parent_receiver("usb")
+                self.sender = self.get_parent_sender("usb")
+                if hasattr(self.sender, "attach_receiver"):
+                    self.sender.attach_receiver(self.receiver)
+
+                if was_running and hasattr(self.sender, "stop_aq"):
+                    self.sender.stop_aq()
+                    self.adc_running = False
+                    time.sleep(0.05)
+
+                if (self.receiver.port != usb_port) or (int(self.receiver.baudrate) != baudrate_value):
+                    self.receiver.rebind(usb_port, baudrate=baudrate_value)
+                self.sender.port = usb_port
+                self.sender.baudrate = baudrate_value
+                self.receiver.start()
+                self.sender.open()
+            except Exception as exc:
+                self.detected_board = None
+                self.detected_board_label.setText(f"USB detect error: {exc}")
+                return
 
         if hasattr(self.receiver, "clear_text_messages"):
             self.receiver.clear_text_messages()
+        if hasattr(self.receiver, "_rx"):
+            self.receiver._rx.clear()
 
         if not self.sender.send("BOARD?"):
             self.detected_board_label.setText("No device detected yet")
+            if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
+                if self.sender.start_aq():
+                    self.adc_running = True
             return
 
         deadline = time.time() + 2.0
@@ -1039,6 +1209,10 @@ class BaseDAQPage(QWidget):
         else:
             self.detected_board = None
             self.detected_board_label.setText("No reply to BOARD? Check IP, ports, and flashed firmware.")
+
+        if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
+            if self.sender.start_aq():
+                self.adc_running = True
 
     def build_actuator_menu(self):
         actuator_modes = {
@@ -1110,34 +1284,70 @@ class BaseDAQPage(QWidget):
         self.sender.set_actuator_mode(self.current_actuator_transport_mode())
 
     def connect_transport(self):
-        if self.transport_selector.currentText() != "Ethernet (UDP)":
-            QMessageBox.information(
-                self,
-                "USB HS Not Ready",
-                "USB HS settings are shown for future implementation, but the transport is not wired yet."
-            )
-            return
-
-        try:
-            board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
-            self.sender.configure(ip=board_ip, port=cmd_port)
-            self.receiver.rebind(data_port, host=local_ip)
-            self.sender.open()
-            self.sender.sync_board_mode()
-            self.sender.sync_actuator_mode()
-            if hasattr(self.sender, "sync_pe_gain"):
-                self.sender.sync_pe_gain()
-            self.receiver.start()
-            self.update_comm_status()
-        except Exception as exc:
-            QMessageBox.warning(self, "Connection Error", str(exc))
+        transport_mode = self.transport_selector.currentText()
+        
+        if transport_mode == "Ethernet (UDP)":
+            try:
+                board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
+                self.sender.configure(ip=board_ip, port=cmd_port)
+                # Switch to UDP receiver
+                self.receiver = self.get_parent_receiver("udp")
+                self.sender = self.get_parent_sender("udp")
+                self.receiver.rebind(data_port, host=local_ip)
+                self.sender.open()
+                self.sender.sync_board_mode()
+                self.sender.sync_actuator_mode()
+                if hasattr(self.sender, "sync_pe_gain"):
+                    self.sender.sync_pe_gain()
+                self.receiver.start()
+                if self.sender.start_aq():
+                    self.adc_running = True
+                self.update_comm_status()
+            except Exception as exc:
+                QMessageBox.warning(self, "Connection Error", str(exc))
+        
+        elif transport_mode == "HS USB":
+            try:
+                usb_port = self.usb_port_input.currentText().strip()
+                baudrate = self.usb_baudrate_input.text().strip()
+                baudrate_value = int(baudrate)
+                
+                if not usb_port:
+                    raise ValueError("USB COM port cannot be empty.")
+                if not baudrate:
+                    raise ValueError("Baudrate cannot be empty.")
+                
+                # Switch to USB receiver
+                self.receiver = self.get_parent_receiver("usb")
+                self.sender = self.get_parent_sender("usb")
+                if hasattr(self.sender, "attach_receiver"):
+                    self.sender.attach_receiver(self.receiver)
+                if hasattr(self.sender, "configure"):
+                    self.sender.configure(port=usb_port, baudrate=baudrate_value)
+                if (self.receiver.port != usb_port) or (int(self.receiver.baudrate) != baudrate_value):
+                    self.receiver.rebind(usb_port, baudrate=baudrate_value)
+                self.receiver.set_buffer_size(int(self.buffer.currentText()))
+                self.receiver.start()
+                self.adc_running = False
+                self.update_comm_status()
+                QMessageBox.information(self, "USB Connected", f"Connected to {usb_port} at {baudrate} bps")
+            except Exception as exc:
+                QMessageBox.warning(self, "USB Connection Error", str(exc))
 
     def disconnect_transport(self):
-        if self.transport_selector.currentText() != "Ethernet (UDP)":
-            return
-
-        self.sender.close()
-        self.receiver.stop()
+        transport_mode = self.transport_selector.currentText()
+        
+        if transport_mode == "Ethernet (UDP)":
+            self.sender = self.get_parent_sender("udp")
+            self.adc_running = False
+            self.sender.close()
+            self.receiver.stop()
+        elif transport_mode == "HS USB":
+            self.sender = self.get_parent_sender("usb")
+            self.adc_running = False
+            self.sender.close()
+            self.receiver.stop()
+        
         self.update_comm_status()
 
     def format_age_seconds(self, timestamp):
@@ -1149,26 +1359,43 @@ class BaseDAQPage(QWidget):
         if not hasattr(self, "comm_status_label"):
             return
 
-        if hasattr(self, "transport_selector") and self.transport_selector.currentText() != "Ethernet (UDP)":
-            return
+        transport_mode = self.transport_selector.currentText() if hasattr(self, "transport_selector") else "Ethernet (UDP)"
+        
+        if transport_mode == "Ethernet (UDP)":
+            sender_status = self.sender.get_status()
+            receiver_status = self.receiver.get_status()
+            sender_state = "ready" if sender_status["connected"] else "stopped"
+            receiver_state = "listening" if receiver_status["connected"] else "stopped"
+            bind_text = receiver_status.get("display_host", "N/A")
+            if receiver_status.get("host") == "0.0.0.0":
+                bind_text = f"{receiver_status.get('display_host', 'N/A')} (all interfaces)"
 
-        sender_status = self.sender.get_status()
-        receiver_status = self.receiver.get_status()
-        sender_state = "ready" if sender_status["connected"] else "stopped"
-        receiver_state = "listening" if receiver_status["connected"] else "stopped"
-        bind_text = receiver_status["display_host"]
-        if receiver_status["host"] == "0.0.0.0":
-            bind_text = f"{receiver_status['display_host']} (all interfaces)"
-
-        self.comm_status_label.setText(
-            f"Sender: {sender_state} to {sender_status['ip']}:{sender_status['port']} | "
-            f"RX: {receiver_state} on {bind_text}:{receiver_status['port']} | "
-            f"Packets: {receiver_status['packet_count']} | "
-            f"Speed: {receiver_status['speed_mbps']:.2f} Mbps | "
-            f"Sent: {sender_status['sent_count']} | "
-            f"Last RX: {self.format_age_seconds(receiver_status['last_packet_time'])} | "
-            f"Last TX: {self.format_age_seconds(sender_status['last_send_time'])}"
-        )
+            self.comm_status_label.setText(
+                f"Sender: {sender_state} to {sender_status['ip']}:{sender_status['port']} | "
+                f"RX: {receiver_state} on {bind_text}:{receiver_status['port']} | "
+                f"Packets: {receiver_status['packet_count']} | "
+                f"Speed: {receiver_status['speed_mbps']:.2f} Mbps | "
+                f"Sent: {sender_status['sent_count']} | "
+                f"Last RX: {self.format_age_seconds(receiver_status['last_packet_time'])} | "
+                f"Last TX: {self.format_age_seconds(sender_status['last_send_time'])}"
+            )
+        
+        elif transport_mode == "HS USB":
+            sender_status = self.sender.get_status() if hasattr(self.sender, "get_status") else {"sent_count": 0}
+            receiver_status = self.receiver.get_status()
+            connected = receiver_status.get("connected", False)
+            state = "connected" if connected else "disconnected"
+            
+            self.usb_status_label.setText(
+                f"Status: {state} | "
+                f"Port: {receiver_status.get('port', 'N/A')} | "
+                f"Baudrate: {receiver_status.get('baudrate', 'N/A')} | "
+                f"Packets: {receiver_status.get('packet_count', 0)} | "
+                f"Samples: {receiver_status.get('total_samples', 0)} | "
+                f"Speed: {receiver_status.get('speed_mbps', 0):.2f} Mbps | "
+                f"Sent: {sender_status.get('sent_count', 0)} | "
+                f"Last RX: {self.format_age_seconds(receiver_status.get('last_packet_time'))}"
+            )
     # =========================
     # ADC & DAC CONTROL (USB COMMUNICATION/UDP COMMANDS)
     # =========================
@@ -1180,12 +1407,12 @@ class BaseDAQPage(QWidget):
         self.sender.set_buffer(value)
         self.receiver.set_buffer_size(int(value))
     def start_acquisition(self):
-        self.sender.start_aq()
-        self.adc_running= True
+        if self.sender.start_aq():
+            self.adc_running = True
 
     def stop_acquisition(self):
-        self.sender.stop_aq()
-        self.adc_running=False
+        if self.sender.stop_aq():
+            self.adc_running = False
 
     def set_sampling_rate(self, value=None):
         if value is None:

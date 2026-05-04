@@ -26,7 +26,10 @@ class USBSender:
             self.port = str(port)
         if baudrate is not None:
             self.baudrate = int(baudrate)
-        if self.receiver is not None:
+
+        if self.receiver is not None and (
+            self.receiver.port != self.port or int(self.receiver.baudrate) != int(self.baudrate)
+        ):
             self.receiver.rebind(self.port, baudrate=self.baudrate)
 
     def _shared_serial(self):
@@ -53,12 +56,13 @@ class USBSender:
         if self.ser is not None and self.ser.is_open:
             return
 
-        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=0.2)
+        self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=0.05)
         self.connected = True
         self.last_error = ""
         print(f"[USB] Sender ready for {self.port}")
 
     def close(self):
+        was_active = self.connected or (self.ser is not None and self.ser.is_open)
         if self.ser is not None:
             try:
                 self.ser.close()
@@ -66,7 +70,8 @@ class USBSender:
                 pass
         self.ser = None
         self.connected = False
-        print("[USB] Sender stopped")
+        if was_active:
+            print("[USB] Sender stopped")
 
     def send(self, cmd):
         try:
@@ -79,8 +84,12 @@ class USBSender:
                 raise serial.SerialException("USB serial port is not open")
 
             payload = (cmd.strip() + "\n").encode("ascii")
-            ser.write(payload)
-            ser.flush()
+            io_lock = getattr(self.receiver, "io_lock", None)
+            if io_lock is not None:
+                with io_lock:
+                    ser.write(payload)
+            else:
+                ser.write(payload)
             self.last_send_time = time.time()
             self.sent_count += 1
             self.connected = True
@@ -107,21 +116,21 @@ class USBSender:
         }
 
     def start_aq(self):
-        self.send("START ADC")
+        return self.send("START ADC")
 
     def stop_aq(self):
-        self.send("STOP ADC")
+        return self.send("STOP ADC")
 
     def set_buffer(self, size):
-        self.send(f"BUF,{size}")
+        return self.send(f"BUF,{size}")
 
     def set_sampling_rate(self, rate):
-        self.send(f"ADC SAMP,{rate}")
+        return self.send(f"ADC SAMP,{rate}")
 
     def set_adc_resolution(self, resolution):
         if isinstance(resolution, str):
             resolution = resolution.strip().replace("-bit", "")
-        self.send(f"ADC RES,{resolution}")
+        return self.send(f"ADC RES,{resolution}")
 
     def start_gen(self):
         self.send("DAC START")
