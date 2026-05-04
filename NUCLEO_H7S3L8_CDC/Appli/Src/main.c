@@ -60,12 +60,12 @@ TIM_HandleTypeDef htim6;
 __attribute__((section("noncacheable_buffer"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
-volatile uint8_t adc_running = 1;
+volatile uint8_t adc_running = 0;
 #define CHUNK_SIZE 1024 // Number of 32-bit words to send in one USB packet, must be less than (USB_MAX_PACKET_SIZE / 4) to fit in one packet
 volatile uint8_t dma_half_complete = 0;
 volatile uint8_t dma_full_complete = 0;
 uint16_t adc1, adc2;
-static volatile uint8_t adc_stream_enabled = 1U;
+static volatile uint8_t adc_stream_enabled = 0U;
 static char usb_command_buffer[96];
 static uint32_t usb_command_length;
 
@@ -82,8 +82,14 @@ static void MX_ADC2_Init(void);
 static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 static void CDC_SendBytes(uint8_t *data, uint16_t length);
+static void CDC_SendText(const char *text);
 static void SendAdcBinaryFrame(uint32_t start_index, uint32_t sample_count);
 static void ProcessUsbCommand(const char *command);
+static void StartAdcAcquisition(void);
+static void StopAdcAcquisition(void);
+static void SetAdcBufferSize(uint32_t requested_size);
+static void SetAdcSamplingRate(uint32_t sample_rate_hz);
+static void SetAdcResolution(uint32_t resolution_bits);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -153,9 +159,7 @@ int main(void)
       Error_Handler();
   }
 
-  HAL_ADC_Start(&hadc2);   // slave first
-  HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adc_buffer, active_buffer_size);
-  HAL_TIM_Base_Start(&htim6);
+  /* ADC streaming starts only after the GUI sends START ADC. */
 
   /* USER CODE END 2 */
 
@@ -585,6 +589,16 @@ static void CDC_SendBytes(uint8_t *data, uint16_t length)
   }
 }
 
+static void CDC_SendText(const char *text)
+{
+  if (text == NULL)
+  {
+    return;
+  }
+
+  CDC_SendBytes((uint8_t *)text, (uint16_t)strlen(text));
+}
+
 static void SendAdcBinaryFrame(uint32_t start_index, uint32_t sample_count)
 {
   uint8_t header[8];
@@ -615,24 +629,220 @@ static void SendAdcBinaryFrame(uint32_t start_index, uint32_t sample_count)
   }
 }
 
+static void StopAdcAcquisition(void)
+{
+  HAL_TIM_Base_Stop(&htim6);
+  HAL_ADCEx_MultiModeStop_DMA(&hadc1);
+  HAL_ADC_Stop(&hadc2);
+  dma_half_complete = 0U;
+  dma_full_complete = 0U;
+  adc_running = 0U;
+}
+
+static void StartAdcAcquisition(void)
+{
+  dma_half_complete = 0U;
+  dma_full_complete = 0U;
+
+  if (HAL_ADC_Start(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t *)adc_buffer, active_buffer_size) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_TIM_Base_Start(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  adc_running = 1U;
+}
+
+static void SetAdcBufferSize(uint32_t requested_size)
+{
+  uint8_t was_running = adc_running;
+
+  if ((requested_size < 2U) || (requested_size > Max_ADC_BUFFER_SIZE))
+  {
+    return;
+  }
+
+  if ((requested_size & 1U) != 0U)
+  {
+    requested_size--;
+  }
+
+  if (was_running != 0U)
+  {
+    StopAdcAcquisition();
+  }
+
+  active_buffer_size = requested_size;
+
+  if (was_running != 0U)
+  {
+    StartAdcAcquisition();
+  }
+}
+
+static void SetAdcSamplingRate(uint32_t sample_rate_hz)
+{
+  uint32_t timer_clock_hz;
+  uint32_t prescaler;
+  uint32_t timer_count_hz;
+  uint32_t period;
+  uint8_t was_running = adc_running;
+
+  if ((sample_rate_hz < 1000U) || (sample_rate_hz > 2000000U))
+  {
+    return;
+  }
+
+  timer_clock_hz = HAL_RCC_GetPCLK1Freq();
+  prescaler = htim6.Init.Prescaler + 1U;
+  timer_count_hz = timer_clock_hz / prescaler;
+  period = (timer_count_hz / sample_rate_hz);
+
+  if ((period == 0U) || (period > 65536U))
+  {
+    return;
+  }
+
+  if (was_running != 0U)
+  {
+    StopAdcAcquisition();
+  }
+
+  htim6.Init.Period = period - 1U;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  __HAL_TIM_SET_COUNTER(&htim6, 0U);
+
+  if (was_running != 0U)
+  {
+    StartAdcAcquisition();
+  }
+}
+
+static void SetAdcResolution(uint32_t resolution_bits)
+{
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+  uint32_t resolution;
+  uint8_t was_running = adc_running;
+
+  if (resolution_bits == 10U)
+  {
+    resolution = ADC_RESOLUTION_10B;
+  }
+  else if (resolution_bits == 12U)
+  {
+    resolution = ADC_RESOLUTION_12B;
+  }
+  else
+  {
+    return;
+  }
+
+  if (was_running != 0U)
+  {
+    StopAdcAcquisition();
+  }
+
+  hadc1.Init.Resolution = resolution;
+  hadc2.Init.Resolution = resolution;
+
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADC_Init(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  multimode.Mode = ADC_DUALMODE_REGSIMULT;
+  multimode.DMAAccessMode = ADC_DMAACCESSMODE_12_10_BITS;
+  multimode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_1CYCLE;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_15;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  sConfig.OffsetSign = ADC_OFFSET_SIGN_NEGATIVE;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_4;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (was_running != 0U)
+  {
+    StartAdcAcquisition();
+  }
+}
+
 static void ProcessUsbCommand(const char *command)
 {
-  if ((strcmp(command, "START") == 0) || (strcmp(command, "START ADC") == 0))
+  if (strcmp(command, "BOARD?") == 0)
+  {
+    uint8_t stream_was_enabled = adc_stream_enabled;
+
+    adc_stream_enabled = 0U;
+    CDC_SendText("BOARD,Nucleo H7S3L8\r\n");
+    adc_stream_enabled = stream_was_enabled;
+  }
+  else if ((strcmp(command, "START") == 0) || (strcmp(command, "START ADC") == 0))
   {
     adc_stream_enabled = 1U;
+    if (adc_running == 0U)
+    {
+      StartAdcAcquisition();
+    }
   }
   else if ((strcmp(command, "STOP") == 0) || (strcmp(command, "STOP ADC") == 0))
   {
     adc_stream_enabled = 0U;
+    if (adc_running != 0U)
+    {
+      StopAdcAcquisition();
+    }
   }
   else if (strncmp(command, "BUF,", 4) == 0)
   {
     uint32_t requested_size = (uint32_t)strtoul(&command[4], NULL, 10);
 
-    if ((requested_size > 0U) && (requested_size <= Max_ADC_BUFFER_SIZE))
-    {
-      active_buffer_size = requested_size;
-    }
+    SetAdcBufferSize(requested_size);
+  }
+  else if (strncmp(command, "ADC SAMP,", 9) == 0)
+  {
+    uint32_t sample_rate_hz = (uint32_t)strtoul(&command[9], NULL, 10);
+
+    SetAdcSamplingRate(sample_rate_hz);
+  }
+  else if (strncmp(command, "ADC RES,", 8) == 0)
+  {
+    uint32_t resolution_bits = (uint32_t)strtoul(&command[8], NULL, 10);
+
+    SetAdcResolution(resolution_bits);
   }
 }
 
