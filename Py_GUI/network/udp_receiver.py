@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from collections import deque
 
 import numpy as np
 
@@ -18,6 +19,8 @@ def detect_local_ip(default="127.0.0.1"):
 
 
 class UDPReceiver:
+    TEXT_PREFIXES = ("BOARD", "CAPS", "FW")
+
     def __init__(self, port=5005, buffer_size=2000, resolution_bits=16, host="0.0.0.0"):
         self.port = int(port)
         self.host = host
@@ -45,8 +48,32 @@ class UDPReceiver:
         self.speed_mbps = 0.0
         self.speed_window_bytes = 0
         self.speed_window_start = time.perf_counter()
+        self.text_messages = deque(maxlen=16)
 
         self.start()
+
+    def _store_text_message(self, data):
+        try:
+            text = data.decode("ascii").strip()
+        except UnicodeDecodeError:
+            return False
+
+        if not text.startswith(self.TEXT_PREFIXES):
+            return False
+
+        with self.lock:
+            self.text_messages.append(text)
+        return True
+
+    def clear_text_messages(self):
+        with self.lock:
+            self.text_messages.clear()
+
+    def get_text_message(self):
+        with self.lock:
+            if self.text_messages:
+                return self.text_messages.popleft()
+        return None
 
     def set_resolution(self, resolution):
         if isinstance(resolution, str):
@@ -113,6 +140,9 @@ class UDPReceiver:
                     continue
 
                 data, _addr = self.sock.recvfrom(65535)
+                if self._store_text_message(data):
+                    continue
+
                 self.last_packet_time = time.time()
                 self.packet_count += 1
                 self.total_bytes += len(data)

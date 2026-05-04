@@ -128,6 +128,7 @@ void udp_receive_callback(void *arg,
                           u16_t port);
 
 void parse_command(char *cmd);
+void send_status_text(const char *text);
 void update_adc_buffer_size(uint32_t new_size);
 void stop_adc_acquisition(void);
 void start_adc_acquisition(void);
@@ -995,7 +996,11 @@ void udp_receive_callback(void *arg,
 }
 void parse_command(char *cmd)
 {
-    if(strncmp(cmd,"BUF",3)==0)
+    if(strcmp(cmd, "BOARD?") == 0)
+    {
+        send_status_text("BOARD,Nucleo H723ZG\n");
+    }
+    else if(strncmp(cmd,"BUF",3)==0)
     {
         uint32_t size;
 
@@ -1076,6 +1081,33 @@ void parse_command(char *cmd)
             set_pe_gain((uint8_t)gain_index);
         }
     }
+}
+
+void send_status_text(const char *text)
+{
+    struct pbuf *p;
+    size_t len;
+
+    if ((upcb == NULL) || (text == NULL))
+    {
+        return;
+    }
+
+    len = strlen(text);
+    if (len == 0U)
+    {
+        return;
+    }
+
+    p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)len, PBUF_RAM);
+    if (p == NULL)
+    {
+        return;
+    }
+
+    memcpy(p->payload, text, len);
+    udp_send(upcb, p);
+    pbuf_free(p);
 }
 void send_adc_data(uint32_t* data, uint32_t length)
 {

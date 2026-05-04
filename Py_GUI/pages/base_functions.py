@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QFormLayout, QLineEdit, QSizePolicy, QSpacerItem, QWidget, QVBoxLayout, QTabWidget,
-    QLabel, QPushButton, QComboBox,
+    QLabel, QPushButton, QComboBox, QApplication,
     QGroupBox, QGridLayout, QHBoxLayout, QCheckBox, QMessageBox, QStackedWidget, QToolButton, QMenu, QSlider
 )
 from PyQt6.QtCore import Qt
@@ -16,6 +16,9 @@ from lib.root_mean_square import compute_rms_amplitude
 
 
 class BaseDAQPage(QWidget):
+    ALL_ADC_RESOLUTIONS = ["10-bit", "12-bit", "14-bit", "16-bit"]
+    H7S_ADC_RESOLUTIONS = ["10-bit", "12-bit"]
+
     def __init__(self, receiver, sender):
 
         super().__init__()
@@ -48,6 +51,7 @@ class BaseDAQPage(QWidget):
         self.time_offset_2 = 0
         self.adc_running = False
         self.external_freq_tolerance_hz = 50.0
+        self.detected_board = None
 
         self.build_setup_tab()
         self.build_sweep_tab()
@@ -84,7 +88,7 @@ class BaseDAQPage(QWidget):
 
         #Resolution (optional, for display purposes only)
         self.resolution = QComboBox()
-        self.resolution.addItems(["10-bit", "12-bit", "14-bit", "16-bit"])
+        self.resolution.addItems(self.ALL_ADC_RESOLUTIONS)
         self.resolution.setCurrentText("16-bit")
         adc_layout.addRow("ADC Resolution:", self.resolution)
         
@@ -203,6 +207,15 @@ class BaseDAQPage(QWidget):
         self.transport_selector.addItems(["Ethernet (UDP)", "HS USB"])
         comm_layout.addWidget(self.transport_selector)
 
+        board_row = QHBoxLayout()
+        board_row.addWidget(QLabel("Detected Board:"))
+        self.detected_board_label = QLabel("No device detected yet")
+        self.detected_board_label.setObjectName("MutedLabel")
+        board_row.addWidget(self.detected_board_label, 1)
+        self.detect_board_btn = QPushButton("Detect Board")
+        board_row.addWidget(self.detect_board_btn)
+        comm_layout.addLayout(board_row)
+
         self.comm_stack = QStackedWidget()
 
         ethernet_page = QWidget()
@@ -304,6 +317,7 @@ class BaseDAQPage(QWidget):
         self.connect_comm_btn.clicked.connect(self.connect_transport)
         self.disconnect_comm_btn.clicked.connect(self.disconnect_transport)
         self.transport_selector.currentIndexChanged.connect(self.update_transport_panel)
+        self.detect_board_btn.clicked.connect(lambda: self.detect_board())
         self.auto_ref_freq_checkbox.toggled.connect(self.update_actuator)
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
@@ -958,6 +972,73 @@ class BaseDAQPage(QWidget):
             self.comm_stack.setCurrentIndex(0)
         else:
             self.comm_stack.setCurrentIndex(1)
+
+    def set_resolution_choices(self, choices, default_resolution):
+        current = self.resolution.currentText()
+        target = current if current in choices else default_resolution
+        existing = [self.resolution.itemText(index) for index in range(self.resolution.count())]
+
+        self.resolution.blockSignals(True)
+        if existing != choices:
+            self.resolution.clear()
+            self.resolution.addItems(choices)
+        self.resolution.setCurrentText(target)
+        self.resolution.blockSignals(False)
+
+        self.receiver.set_resolution(target)
+
+    def apply_board_detection(self, reply):
+        normalized = "".join(reply.strip().upper().split()).replace("-", "_")
+        self.detected_board_label.setText(reply.strip())
+
+        if "H7S3L8" in normalized or "H7SL8" in normalized:
+            self.detected_board = "Nucleo H7S3L8"
+            self.set_resolution_choices(self.H7S_ADC_RESOLUTIONS, "12-bit")
+        else:
+            self.detected_board = "Nucleo H723ZG"
+            self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, "16-bit")
+
+    def detect_board(self):
+        if not hasattr(self, "sender") or not hasattr(self, "receiver"):
+            return
+
+        self.detected_board_label.setText("Detecting...")
+        QApplication.processEvents()
+
+        if self.transport_selector.currentText() == "Ethernet (UDP)":
+            try:
+                board_ip, local_ip, cmd_port, data_port = self.validate_comm_settings()
+                self.sender.configure(ip=board_ip, port=cmd_port)
+                self.receiver.rebind(data_port, host=local_ip)
+                self.receiver.start()
+                self.sender.open()
+            except Exception as exc:
+                self.detected_board = None
+                self.detected_board_label.setText(f"Detection setup error: {exc}")
+                return
+
+        if hasattr(self.receiver, "clear_text_messages"):
+            self.receiver.clear_text_messages()
+
+        if not self.sender.send("BOARD?"):
+            self.detected_board_label.setText("No device detected yet")
+            return
+
+        deadline = time.time() + 2.0
+        reply = None
+        while time.time() < deadline:
+            QApplication.processEvents()
+            if hasattr(self.receiver, "get_text_message"):
+                reply = self.receiver.get_text_message()
+            if reply:
+                break
+            time.sleep(0.03)
+
+        if reply:
+            self.apply_board_detection(reply)
+        else:
+            self.detected_board = None
+            self.detected_board_label.setText("No reply to BOARD? Check IP, ports, and flashed firmware.")
 
     def build_actuator_menu(self):
         actuator_modes = {
