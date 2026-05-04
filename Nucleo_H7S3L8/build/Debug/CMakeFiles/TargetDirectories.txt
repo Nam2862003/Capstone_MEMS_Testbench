@@ -1,3 +1,0 @@
-C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/Nucleo_H7S3L8_Appli.dir
-C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/edit_cache.dir
-C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/build/Debug/CMakeFiles/rebuild_cache.dir

@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/STM32/Capstone_MEMS_Testbench/Nucleo_H7S3L8/Appli/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
