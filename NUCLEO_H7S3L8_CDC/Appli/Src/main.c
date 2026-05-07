@@ -88,12 +88,12 @@ TIM_HandleTypeDef htim6;
 __attribute__((section("noncacheable_buffer"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
-volatile uint8_t adc_running = 0;
+volatile uint8_t adc_running = 1;
 #define CHUNK_SIZE 1024 // Number of 32-bit words to send in one USB packet, must be less than (USB_MAX_PACKET_SIZE / 4) to fit in one packet
 volatile uint8_t dma_half_complete = 0;
 volatile uint8_t dma_full_complete = 0;
 uint16_t adc1, adc2;
-static volatile uint8_t adc_stream_enabled = 0U;
+static volatile uint8_t adc_stream_enabled = 1U;
 static char usb_command_buffer[96];
 static uint32_t usb_command_length;
 static volatile uint8_t dds_running = 0U;
@@ -202,11 +202,11 @@ int main(void)
       Error_Handler();
   }
 
-  /* ADC streaming starts only after the GUI sends START ADC. */
   DdsInit();
-  SetBoardMode(BOARD_MODE_PE);
-  SetActuatorMode(ACTUATOR_MODE_DDS);
-  SetPeGain(0U);
+  HAL_ADC_Start(&hadc2);   // slave first
+  HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adc_buffer, active_buffer_size);
+  HAL_TIM_Base_Start(&htim6);
+
 
   /* USER CODE END 2 */
 
@@ -283,7 +283,7 @@ static void MX_ADC1_Init(void)
   /** Configure the ADC multi-mode
   */
   multimode.Mode = ADC_DUALMODE_REGSIMULT;
-  multimode.DMAAccessMode = ADC_DMAACCESSMODE_8_6_BITS;
+  multimode.DMAAccessMode = ADC_DMAACCESSMODE_12_10_BITS;
   multimode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_1CYCLE;
   if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
   {
@@ -294,7 +294,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -352,7 +352,7 @@ static void MX_ADC2_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_4;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -466,16 +466,16 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 0x7;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
   hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
   hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
@@ -715,7 +715,7 @@ static void DdsWriteWord(uint16_t word)
   tx[1] = (uint8_t)(word & 0xFFU);
 
   HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_RESET);
-  (void)HAL_SPI_Transmit(&hspi1, tx, 2U, HAL_MAX_DELAY);
+  (void)HAL_SPI_Transmit(&hspi1, tx, 2U, 10U);
   HAL_GPIO_WritePin(DDS_CS_GPIO_Port, DDS_CS_Pin, GPIO_PIN_SET);
 }
 
@@ -828,15 +828,15 @@ static void SetPeGain(uint8_t gain_index)
   }
 
   pe_gain_index = gain_index;
-  a0_state = (uint8_t)(gain_index & 0x01U);
-  a1_state = (uint8_t)((gain_index >> 1U) & 0x01U);
+  a0_state = (uint8_t)((gain_index >> 1U) & 0x01U);
+  a1_state = (uint8_t)(gain_index & 0x01U);
 
   HAL_GPIO_WritePin(PE_GAIN_A0_GPIO_Port,
                     PE_GAIN_A0_Pin,
-                    (a0_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_SET);
+                    (a0_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
   HAL_GPIO_WritePin(PE_GAIN_A1_GPIO_Port,
                     PE_GAIN_A1_Pin,
-                    (a1_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_SET);
+                    (a1_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 static void CDC_SendBytes(uint8_t *data, uint16_t length)
@@ -1041,7 +1041,7 @@ static void SetAdcResolution(uint32_t resolution_bits)
 
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
