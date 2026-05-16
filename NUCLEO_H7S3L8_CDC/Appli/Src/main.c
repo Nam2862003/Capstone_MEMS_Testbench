@@ -84,12 +84,12 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN PV */
-#define Max_ADC_BUFFER_SIZE 4096 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+#define Max_ADC_BUFFER_SIZE 16368   // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
 __attribute__((section("noncacheable_buffer"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
 volatile uint8_t adc_running = 1;
-#define CHUNK_SIZE 1024 // Number of 32-bit words to send in one USB packet, must be less than (USB_MAX_PACKET_SIZE / 4) to fit in one packet
+#define CHUNK_SIZE 1023 // Number of 32-bit words to send in one USB packet, must be less than (USB_MAX_PACKET_SIZE / 4) to fit in one packet
 volatile uint8_t dma_half_complete = 0;
 volatile uint8_t dma_full_complete = 0;
 uint16_t adc1, adc2;
@@ -260,7 +260,7 @@ static void MX_ADC1_Init(void)
   /** Common config
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -294,7 +294,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -330,7 +330,7 @@ static void MX_ADC2_Init(void)
   /** Common config
   */
   hadc2.Instance = ADC2;
-  hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc2.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
   hadc2.Init.Resolution = ADC_RESOLUTION_12B;
   hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -352,7 +352,7 @@ static void MX_ADC2_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_4;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -960,12 +960,17 @@ static void SetAdcSamplingRate(uint32_t sample_rate_hz)
   uint32_t period;
   uint8_t was_running = adc_running;
 
-  if ((sample_rate_hz < 1000U) || (sample_rate_hz > 3000000U))
+  if ((sample_rate_hz < 1000U) || (sample_rate_hz > 4000000U))
   {
     return;
   }
 
   timer_clock_hz = HAL_RCC_GetPCLK1Freq();
+  if ((RCC->APBCFGR & RCC_APBCFGR_PPRE1) != RCC_APB1_DIV1)
+  {
+    timer_clock_hz *= 2U;
+  }
+
   prescaler = htim6.Init.Prescaler + 1U;
   timer_count_hz = timer_clock_hz / prescaler;
   period = (timer_count_hz / sample_rate_hz);

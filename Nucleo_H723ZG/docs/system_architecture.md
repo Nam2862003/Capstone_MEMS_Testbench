@@ -344,3 +344,257 @@ Analog Front-End
 - Add error/status messages for invalid commands.
 - Consider moving UDP/USB behind a common transport API so the same application layer supports both Nucleo-H723ZG and Nucleo-H7S3L8.
 - Consider moving ADC streaming out of interrupt callbacks into a main-loop or RTOS task queue if packet handling becomes too heavy.
+
+## 10. Embedded Firmware Code Flowchart
+
+This flowchart follows the current `Core/Src/main.c` execution path.
+
+```mermaid
+flowchart TD
+    RESET([Reset / Power On])
+    MPU[Configure MPU]
+    CACHE[Enable I-Cache and D-Cache]
+    HAL[HAL_Init]
+    CLOCK[SystemClock_Config\nPeriphCommonClock_Config]
+    INIT[Initialize peripherals\nGPIO, DMA, ADC2, TIM6, LwIP,\nUSART3, ADC1, SPI1]
+    DDSINIT[DDS init\nAD9833 reset/sleep\nset default frequency]
+    ADCSTART[Start ADC2 slave\nStart ADC1 dual-mode DMA\nStart TIM6 trigger]
+    UDPINIT[Create UDP TX PCB\nconnect to PC port 5005\nCreate UDP RX PCB\nbind to port 5006]
+    DEFAULTS[Set default test state\nPE mode, DDS actuator,\nPE gain 0]
+    LOOP{{Main while loop}}
+    LWIP[MX_LWIP_Process\nEthernet input, UDP receive,\ntimeouts, link check]
+
+    RESET --> MPU --> CACHE --> HAL --> CLOCK --> INIT
+    INIT --> DDSINIT --> ADCSTART --> UDPINIT --> DEFAULTS --> LOOP
+    LOOP --> LWIP --> LOOP
+```
+
+### Embedded Command Receive Flow
+
+```mermaid
+flowchart TD
+    RXPKT([UDP packet received on port 5006])
+    COPY[Copy packet payload into command buffer]
+    SETDEST[Update UDP transmit destination\nusing sender IP]
+    PARSE[parse_command]
+    BOARD{Command type?}
+
+    RXPKT --> COPY --> SETDEST --> PARSE --> BOARD
+
+    BOARD -->|BOARD?| BOARDRESP[Send board status text]
+    BOARD -->|BUF,n| BUF[Validate and update active DMA buffer size]
+    BOARD -->|ADC SAMP,fs| FS[Validate sampling rate\nstop ADC if running\nupdate TIM6 auto-reload]
+    BOARD -->|ADC RES,bits| RES[Validate resolution\nstop ADC if running\nreinitialize ADC1/ADC2]
+    BOARD -->|START| START[Start ADC2, ADC1 DMA, TIM6]
+    BOARD -->|STOP| STOP[Stop TIM6, ADC DMA, ADC2]
+    BOARD -->|DAC START| DDSSTART[Enable AD9833 output]
+    BOARD -->|DAC STOP| DDSSTOP[Reset/sleep AD9833]
+    BOARD -->|DAC FREQ,f| DDSFREQ[Calculate tuning word\nwrite AD9833 frequency registers]
+    BOARD -->|MODE,PE / MODE,PR| MODE[Set PE/PR GPIO]
+    BOARD -->|ACTUATOR,...| ACT[Set actuator routing GPIO]
+    BOARD -->|PE GAIN,n| GAIN[Set PE gain GPIO bits]
+    BOARD -->|Unknown| IGNORE[Ignore command]
+
+    BOARDRESP --> DONE([Return to LwIP/main loop])
+    BUF --> DONE
+    FS --> DONE
+    RES --> DONE
+    START --> DONE
+    STOP --> DONE
+    DDSSTART --> DONE
+    DDSSTOP --> DONE
+    DDSFREQ --> DONE
+    MODE --> DONE
+    ACT --> DONE
+    GAIN --> DONE
+    IGNORE --> DONE
+```
+
+### Embedded ADC Streaming Flow
+
+```mermaid
+flowchart TD
+    TIM6([TIM6 update event / TRGO])
+    SAMPLE[ADC1 and ADC2 sample simultaneously]
+    PACK[ADC multimode packs dual result\ninto 32-bit word]
+    DMA[DMA1 Stream0 writes sample\ninto circular adc_buffer]
+    HALF{DMA event?}
+    FIRST[Half-complete callback\nprocess first half of buffer]
+    SECOND[Complete callback\nprocess second half of buffer]
+    CHUNK[Split selected half into\nCHUNK_SIZE blocks]
+    CACHE[Clean D-Cache for chunk]
+    PBUF[Create LwIP pbuf reference\nto ADC buffer memory]
+    SEND[udp_send to GUI port 5005]
+    FREE[Free pbuf]
+
+    TIM6 --> SAMPLE --> PACK --> DMA --> HALF
+    HALF -->|Half complete| FIRST --> CHUNK
+    HALF -->|Full complete| SECOND --> CHUNK
+    CHUNK --> CACHE --> PBUF --> SEND --> FREE
+    FREE --> TIM6
+```
+
+### Embedded DDS Control Flow
+
+```mermaid
+flowchart TD
+    CMD([DDS command from GUI])
+    TYPE{Command}
+    START[DDS START\nset dds_running = 1]
+    STOP[DDS STOP\nset dds_running = 0]
+    FREQ[DDS FREQ,f\nvalidate requested frequency]
+    WORD[Calculate AD9833 28-bit tuning word]
+    WRITECTRL[Write AD9833 control word\nB28 + RESET]
+    WRITELSB[Write frequency LSB word over SPI1]
+    WRITEMSB[Write frequency MSB word over SPI1]
+    RUNNING{dds_running?}
+    ENABLE[Write B28 control word\nDDS output enabled]
+    SLEEP[Write B28 + RESET + SLEEP1\nDDS output disabled]
+
+    CMD --> TYPE
+    TYPE -->|DAC START| START --> WORD
+    TYPE -->|DAC STOP| STOP --> SLEEP
+    TYPE -->|DAC FREQ,f| FREQ --> WORD
+    WORD --> WRITECTRL --> WRITELSB --> WRITEMSB --> RUNNING
+    RUNNING -->|Yes| ENABLE
+    RUNNING -->|No| SLEEP
+```
+
+## 11. GUI Code Flowchart
+
+This is the recommended GUI code flow. It matches the firmware command protocol and supports either Ethernet UDP or HS USB CDC behind the same transport interface.
+
+```mermaid
+flowchart TD
+    GUISTART([Start GUI application])
+    INITUI[Create main window\ncontrols, plots, status panel]
+    LOAD[Load default settings\nboard IP, UDP ports,\nsample rate, buffer size]
+    TRANSPORT{Select transport}
+    UDP[Open UDP sockets\nTX to board port 5006\nRX on PC port 5005]
+    USB[Open USB CDC port\nfor H7S3L8 option]
+    ID[Send BOARD?]
+    WAIT[Wait for board response]
+    READY[GUI ready]
+
+    GUISTART --> INITUI --> LOAD --> TRANSPORT
+    TRANSPORT -->|Ethernet / H723ZG| UDP --> ID
+    TRANSPORT -->|HS USB CDC / H7S3L8| USB --> ID
+    ID --> WAIT --> READY
+```
+
+### GUI Control Flow
+
+```mermaid
+flowchart TD
+    READY{{GUI event loop}}
+    EVENT{User action?}
+    SAMPLE[User changes sample rate]
+    RES[User changes ADC resolution]
+    BUF[User changes buffer size]
+    START[User presses Start]
+    STOP[User presses Stop]
+    DDSF[User changes DDS frequency]
+    DDSSTART[User presses DDS Start]
+    DDSSTOP[User presses DDS Stop]
+    MODE[User selects PE/PR mode]
+    ACT[User selects actuator source]
+    GAIN[User selects PE gain]
+
+    TX[Format ASCII command]
+    SEND[Send command through\nUDP or USB CDC]
+    STATE[Update local GUI state\nand status display]
+
+    READY --> EVENT
+    EVENT -->|Sample rate| SAMPLE --> TX
+    EVENT -->|ADC resolution| RES --> TX
+    EVENT -->|Buffer size| BUF --> TX
+    EVENT -->|Start acquisition| START --> TX
+    EVENT -->|Stop acquisition| STOP --> TX
+    EVENT -->|DDS frequency| DDSF --> TX
+    EVENT -->|DDS start| DDSSTART --> TX
+    EVENT -->|DDS stop| DDSSTOP --> TX
+    EVENT -->|PE/PR mode| MODE --> TX
+    EVENT -->|Actuator source| ACT --> TX
+    EVENT -->|PE gain| GAIN --> TX
+    TX --> SEND --> STATE --> READY
+```
+
+Command examples generated by the GUI:
+
+```text
+ADC SAMP,100000
+ADC RES,16
+BUF,4096
+START
+STOP
+DAC FREQ,1000
+DAC START
+DAC STOP
+MODE,PE
+MODE,PR
+ACTUATOR,DDS
+ACTUATOR,FG
+PE GAIN,2
+```
+
+### GUI Data Receive Flow
+
+```mermaid
+flowchart TD
+    RX([Receive data from STM32])
+    KIND{Payload type?}
+    TEXT[Status text packet]
+    BINARY[Binary ADC sample packet]
+    DISPLAY[Update status display]
+    UNPACK[Unpack 32-bit dual ADC words]
+    CH1[Extract channel 1\nMEMS or reference]
+    CH2[Extract channel 2\nMEMS or reference]
+    SCALE[Convert counts to voltage\nusing ADC resolution and Vref]
+    FILTER[Optional filtering / FFT / amplitude calculation]
+    PLOT[Update real-time plots]
+    LOG{Logging enabled?}
+    SAVE[Write samples to file]
+    DROP[Discard after plotting]
+
+    RX --> KIND
+    KIND -->|ASCII/status| TEXT --> DISPLAY
+    KIND -->|ADC stream| BINARY --> UNPACK
+    UNPACK --> CH1 --> SCALE
+    UNPACK --> CH2 --> SCALE
+    SCALE --> FILTER --> PLOT --> LOG
+    LOG -->|Yes| SAVE
+    LOG -->|No| DROP
+    SAVE --> RX
+    DROP --> RX
+    DISPLAY --> RX
+```
+
+## 12. Combined Embedded and GUI Flowchart
+
+```mermaid
+flowchart LR
+    subgraph GUI[PC GUI Code]
+        UI[User changes settings\nor presses Start/Stop]
+        CMD[Build ASCII command]
+        TX[Send via UDP or USB CDC]
+        RX[Receive ADC/status data]
+        DEC[Decode samples]
+        PLOT[Plot and log data]
+    end
+
+    subgraph FW[STM32 Embedded Code]
+        COMMS[Receive command]
+        PARSER[parse_command]
+        CFG[Configure ADC/TIM/DDS/GPIO]
+        TRIG[TIM6 trigger]
+        ADC[Dual ADC sample]
+        DMA[DMA circular buffer]
+        CB[Half/full callback]
+        STREAM[Send sample chunks]
+    end
+
+    UI --> CMD --> TX --> COMMS --> PARSER --> CFG
+    CFG --> TRIG --> ADC --> DMA --> CB --> STREAM --> RX
+    RX --> DEC --> PLOT
+    PLOT --> UI
+```

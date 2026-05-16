@@ -97,9 +97,8 @@ class BaseDAQPage(QWidget):
         adc_layout.addRow("Sampling Rate (Hz):", self.sampling_rate_input)
 
         # Buffer size
-        self.buffer = QComboBox()
-        self.buffer.addItems(["512", "1024", "2048", "4096", "8192", "16384"])
-        self.buffer.setCurrentText(self.DEFAULT_BUFFER_SIZE)
+        self.buffer = QLineEdit(self.DEFAULT_BUFFER_SIZE)
+        self.buffer.setValidator(QIntValidator(2, 16368, self))
         adc_layout.addRow("Buffer Size:", self.buffer)
 
         #Resolution (optional, for display purposes only)
@@ -390,7 +389,7 @@ class BaseDAQPage(QWidget):
         self.setup.setLayout(layout)
 
         # connections
-        self.buffer.currentTextChanged.connect(self.set_buffer)
+        self.buffer.editingFinished.connect(self.set_buffer)
         self.start_adc.clicked.connect(self.start_acquisition)
         self.stop_adc.clicked.connect(self.stop_acquisition)
         self.sampling_rate_input.editingFinished.connect(self.set_sampling_rate)
@@ -1190,7 +1189,7 @@ class BaseDAQPage(QWidget):
         if hasattr(self, "sampling_rate_input"):
             self.sampling_rate_input.setText(self.DEFAULT_SAMPLING_RATE)
         if hasattr(self, "buffer"):
-            self.set_combo_text_silently(self.buffer, self.DEFAULT_BUFFER_SIZE)
+            self.buffer.setText(self.DEFAULT_BUFFER_SIZE)
         if hasattr(self, "resolution"):
             self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, self.DEFAULT_ADC_RESOLUTION)
         if hasattr(self, "mode_selector"):
@@ -1544,7 +1543,7 @@ class BaseDAQPage(QWidget):
                     self.sender.configure(port=usb_port, baudrate=baudrate_value)
                 if (self.receiver.port != usb_port) or (int(self.receiver.baudrate) != baudrate_value):
                     self.receiver.rebind(usb_port, baudrate=baudrate_value)
-                self.receiver.set_buffer_size(int(self.buffer.currentText()))
+                self.receiver.set_buffer_size(int(self.buffer.text()))
                 self.receiver.start()
                 self.sender.open()
                 self.sender.sync_board_mode()
@@ -1619,12 +1618,33 @@ class BaseDAQPage(QWidget):
     # ADC & DAC CONTROL (USB COMMUNICATION/UDP COMMANDS)
     # =========================
     # ADC control
-    def set_buffer(self, value):
+    def set_buffer(self, value=None):
+        if value is None:
+            value = self.buffer.text()
+        value = str(value).strip()
+        if not value:
+            self.buffer.setText(str(self.receiver.buffer_size))
+            return
+
+        try:
+            buffer_size = int(value)
+        except ValueError:
+            self.buffer.setText(str(self.receiver.buffer_size))
+            return
+
+        if buffer_size < 2:
+            self.buffer.setText(str(self.receiver.buffer_size))
+            return
+
+        if (buffer_size & 1) != 0:
+            buffer_size -= 1
+            self.buffer.setText(str(buffer_size))
+
         if self.adc_running:
             self.sender.stop_aq()
             self.adc_running = False
-        self.sender.set_buffer(value)
-        self.receiver.set_buffer_size(int(value))
+        self.sender.set_buffer(buffer_size)
+        self.receiver.set_buffer_size(buffer_size)
     def start_acquisition(self):
         if self.adc_running:
             return
