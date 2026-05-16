@@ -88,7 +88,7 @@ TIM_HandleTypeDef htim6;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-#define Max_ADC_BUFFER_SIZE 4096 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
+#define Max_ADC_BUFFER_SIZE 32384 // 128kB buffer, can hold 16384 samples of 2 ADCs (32 bits each)  
 __attribute__((section(".RAM_D1"), aligned(32)))
 uint32_t adc_buffer[Max_ADC_BUFFER_SIZE];
 volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
@@ -99,7 +99,7 @@ volatile uint8_t adc_running = 1;
 // volatile uint8_t full_ready = 0;q
 
 // uint32_t last_send_time = 0;
-#define CHUNK_SIZE 256 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
+#define CHUNK_SIZE 368 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 volatile uint8_t dds_running = 0;
 volatile uint32_t dds_frequency_hz = 1000;
 volatile uint8_t board_mode = BOARD_MODE_PE;
@@ -425,7 +425,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -483,7 +483,7 @@ static void MX_ADC2_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -883,7 +883,7 @@ void update_buffer_size(uint32_t new_size)
 }
 void update_adc_sampling_rate(uint32_t fs)
 {
-    if(fs < 1000 || fs > 2500000)
+    if(fs < 1000 || fs > 3000000)
         return;
 
     uint32_t pclk = HAL_RCC_GetPCLK1Freq();
@@ -947,7 +947,7 @@ void update_adc_resolution(uint32_t bits)
 
     sConfig.Channel = ADC_CHANNEL_15;
     sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
+    sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
     sConfig.SingleDiff = ADC_SINGLE_ENDED;
     sConfig.OffsetNumber = ADC_OFFSET_NONE;
     sConfig.Offset = 0;
@@ -958,7 +958,7 @@ void update_adc_resolution(uint32_t bits)
 
     sConfig.Channel = ADC_CHANNEL_5;
     sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+    sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
     sConfig.SingleDiff = ADC_SINGLE_ENDED;
     sConfig.OffsetNumber = ADC_OFFSET_NONE;
     sConfig.Offset = 0;

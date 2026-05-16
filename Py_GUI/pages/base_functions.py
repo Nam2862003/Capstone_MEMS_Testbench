@@ -98,7 +98,7 @@ class BaseDAQPage(QWidget):
 
         # Buffer size
         self.buffer = QLineEdit(self.DEFAULT_BUFFER_SIZE)
-        self.buffer.setValidator(QIntValidator(2, 16368, self))
+        self.buffer.setValidator(QIntValidator(0, 50000, self))
         adc_layout.addRow("Buffer Size:", self.buffer)
 
         #Resolution (optional, for display purposes only)
