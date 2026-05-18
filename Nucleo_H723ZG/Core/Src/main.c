@@ -264,7 +264,7 @@ int main(void)
   }
 
   set_board_mode(BOARD_MODE_PE);
-  set_actuator_mode(ACTUATOR_MODE_DDS);
+  set_actuator_mode(ACTUATOR_MODE_STM32_DAC);
   set_pe_gain(0U);
   /* USER CODE END 2 */
 
