@@ -95,8 +95,9 @@ volatile uint32_t active_buffer_size = Max_ADC_BUFFER_SIZE;
 volatile uint8_t adc_running = 1;
 // volatile uint8_t dac_running = 1;
 
-// volatile uint8_t half_ready = 0;
-// volatile uint8_t full_ready = 0;q
+volatile uint8_t half_ready = 0;
+volatile uint8_t full_ready = 0;
+volatile uint8_t adc_stream_overrun = 0;
 
 // uint32_t last_send_time = 0;
 #define CHUNK_SIZE 368 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
@@ -139,8 +140,9 @@ void dds_set_frequency(float freq_hz);
 void set_board_mode(uint8_t mode);
 void set_actuator_mode(uint8_t mode);
 void set_pe_gain(uint8_t gain_index);
-// void process_half_buffer(void);
-// void process_full_buffer(void);
+void process_adc_buffer_range(uint32_t start, uint32_t end);
+void process_half_buffer(void);
+void process_full_buffer(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -275,11 +277,17 @@ int main(void)
     /* USER CODE BEGIN 3 */
     // 1. Handle LwIP tasks (e.g., incoming UDP packets)
     MX_LWIP_Process();
-    // if (half_ready)
-    
- 
-          // process_half_buffer();
-          // process_full_buffer();
+    if (half_ready)
+    {
+      half_ready = 0;
+      process_half_buffer();
+    }
+
+    if (full_ready)
+    {
+      full_ready = 0;
+      process_full_buffer();
+    }
   
   }
   /* USER CODE END 3 */
@@ -425,7 +433,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_15;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -483,7 +491,7 @@ static void MX_ADC2_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -874,12 +882,18 @@ void update_buffer_size(uint32_t new_size)
     if(new_size < 512 || new_size > Max_ADC_BUFFER_SIZE)
         return;
 
+    if ((new_size % (2U * CHUNK_SIZE)) != 0U)
+        return;
+
     if(adc_running == 1)
     {
       
         stop_adc_acquisition();
     }
     active_buffer_size = new_size;
+    half_ready = 0;
+    full_ready = 0;
+    adc_stream_overrun = 0;
 }
 void update_adc_sampling_rate(uint32_t fs)
 {
@@ -1128,33 +1142,45 @@ void send_adc_data(uint32_t* data, uint32_t length)
         p->payload = (void*)data;
         p->len = length * sizeof(uint32_t);
         p->tot_len = p->len;
-        // VERY IMPORTANT: clean DCache
-        SCB_CleanDCache_by_Addr((uint32_t*)data, p->len);
+        SCB_InvalidateDCache_by_Addr((uint32_t*)data, p->len);
         udp_send(upcb, p);
 
         pbuf_free(p);
     }
 }
+
+void process_adc_buffer_range(uint32_t start, uint32_t end)
+{
+    if ((upcb == NULL) || (end > active_buffer_size) || (start >= end))
+    {
+        return;
+    }
+
+    for (uint32_t i = start; i < end; i += CHUNK_SIZE)
+    {
+        send_adc_data(&adc_buffer[i], CHUNK_SIZE);
+    }
+}
+
+void process_half_buffer(void)
+{
+    process_adc_buffer_range(0U, active_buffer_size / 2U);
+}
+
+void process_full_buffer(void)
+{
+    process_adc_buffer_range(active_buffer_size / 2U, active_buffer_size);
+}
+
 /* Triggered when the first half of DMA buffer is ready */
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if (hadc->Instance == ADC1)
     {
-        for (uint32_t i = 0; i < active_buffer_size / 2; i += CHUNK_SIZE)
-        {
-            SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[i], CHUNK_SIZE * sizeof(uint32_t));
+        if (half_ready != 0U)
+            adc_stream_overrun = 1U;
 
-            struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * sizeof(uint32_t), PBUF_REF);
-            if (p != NULL)
-            {
-                p->payload = (void *)&adc_buffer[i];
-                p->len     = CHUNK_SIZE * sizeof(uint32_t);
-                p->tot_len = p->len;
-
-                udp_send(upcb, p);
-                pbuf_free(p);
-            }
-        }
+        half_ready = 1U;
     }
 }
 
@@ -1163,21 +1189,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if (hadc->Instance == ADC1)
     {
-        for (uint32_t i = active_buffer_size / 2; i < active_buffer_size; i += CHUNK_SIZE)
-        {
-            SCB_CleanDCache_by_Addr((uint32_t *)&adc_buffer[i], CHUNK_SIZE * sizeof(uint32_t));
+        if (full_ready != 0U)
+            adc_stream_overrun = 1U;
 
-            struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, CHUNK_SIZE * sizeof(uint32_t), PBUF_REF);
-            if (p != NULL)
-            {
-                p->payload = (void *)&adc_buffer[i];
-                p->len     = CHUNK_SIZE * sizeof(uint32_t);
-                p->tot_len = p->len;
-
-                udp_send(upcb, p);
-                pbuf_free(p);
-            }
-        }
+        full_ready = 1U;
     }
 }
 
