@@ -522,10 +522,10 @@ static void MX_SPI1_Init(void)
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -791,11 +791,15 @@ void set_board_mode(uint8_t mode)
     if (mode == BOARD_MODE_PR)
     {
         HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET); // TURN ON LED OF PR MODE, OFF IN PE MODE
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET); // TURN OFF LED OF PE MODE, ON IN PR MODE
     }
     else
     {
         board_mode = BOARD_MODE_PE;
         HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_RESET); // TURN OFF LED OF PR MODE, ON IN PE MODE
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_SET); // TURN ON LED OF PE MODE, OFF IN PR MODE
     }
 }
 
