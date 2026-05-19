@@ -56,11 +56,11 @@
 #define PE_GAIN_A0_Pin GPIO_PIN_13
 #define PE_GAIN_A1_GPIO_Port GPIOG
 #define PE_GAIN_A1_Pin GPIO_PIN_14
-#define AD9833_CTRL_B28 0x2000U
-#define AD9833_CTRL_RESET 0x0100U
-#define AD9833_CTRL_SLEEP1 0x0080U
-#define AD9833_FREQ0_REG 0x4000U
-#define AD9833_MCLK_HZ 25000000.0
+#define AD9837_CTRL_B28 0x2000U
+#define AD9837_CTRL_RESET 0x0100U
+#define AD9837_CTRL_SLEEP1 0x0080U
+#define AD9837_FREQ0_REG 0x4000U
+#define AD9837_MCLK_HZ 16000000.0 // change from 16 MHz if your MCLK is different
 
 #define BOARD_MODE_PE 0U
 #define BOARD_MODE_PR 1U
@@ -726,20 +726,20 @@ void dds_write_word(uint16_t word)
 
 void dds_apply_frequency_word(uint32_t freq_word)
 {
-    uint16_t lsb_word = AD9833_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
-    uint16_t msb_word = AD9833_FREQ0_REG | (uint16_t)((freq_word >> 14) & 0x3FFFU);
+    uint16_t lsb_word = AD9837_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
+    uint16_t msb_word = AD9837_FREQ0_REG | (uint16_t)((freq_word >> 14) & 0x3FFFU);
 
-    dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET);
+    dds_write_word(AD9837_CTRL_B28 | AD9837_CTRL_RESET);
     dds_write_word(lsb_word);
     dds_write_word(msb_word);
 
     if (dds_running)
     {
-        dds_write_word(AD9833_CTRL_B28);
+        dds_write_word(AD9837_CTRL_B28);
     }
     else
     {
-        dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+        dds_write_word(AD9837_CTRL_B28 | AD9837_CTRL_RESET | AD9837_CTRL_SLEEP1);
     }
 }
 
@@ -760,7 +760,7 @@ void dds_start(void)
 void dds_stop(void)
 {
     dds_running = 0;
-    dds_write_word(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+    dds_write_word(AD9837_CTRL_B28 | AD9837_CTRL_RESET | AD9837_CTRL_SLEEP1);
 }
 
 void dds_set_frequency(float freq_hz)
@@ -770,7 +770,7 @@ void dds_set_frequency(float freq_hz)
         return;
     }
 
-    double tuning = ((double)freq_hz * 268435456.0) / AD9833_MCLK_HZ;
+    double tuning = ((double)freq_hz * 268435456.0) / AD9837_MCLK_HZ;
     if (tuning < 0.0)
     {
         tuning = 0.0;

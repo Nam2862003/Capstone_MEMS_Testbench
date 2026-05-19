@@ -49,11 +49,11 @@
 #define PE_GAIN_A1_GPIO_Port GPIOF
 #define PE_GAIN_A1_Pin GPIO_PIN_15
 
-#define AD9833_CTRL_B28 0x2000U
-#define AD9833_CTRL_RESET 0x0100U
-#define AD9833_CTRL_SLEEP1 0x0080U
-#define AD9833_FREQ0_REG 0x4000U
-#define AD9833_MCLK_HZ 25000000.0
+#define AD9837_CTRL_B28 0x2000U
+#define AD9837_CTRL_RESET 0x0100U
+#define AD9837_CTRL_SLEEP1 0x0080U
+#define AD9837_FREQ0_REG 0x4000U
+#define AD9837_MCLK_HZ 16000000.0 // 16 MHz reference clock for AD9837, adjust if using a different clock source
 
 #define BOARD_MODE_PE 0U
 #define BOARD_MODE_PR 1U
@@ -721,20 +721,20 @@ static void DdsWriteWord(uint16_t word)
 
 static void DdsApplyFrequencyWord(uint32_t freq_word)
 {
-  uint16_t lsb_word = AD9833_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
-  uint16_t msb_word = AD9833_FREQ0_REG | (uint16_t)((freq_word >> 14U) & 0x3FFFU);
+  uint16_t lsb_word = AD9837_FREQ0_REG | (uint16_t)(freq_word & 0x3FFFU);
+  uint16_t msb_word = AD9837_FREQ0_REG | (uint16_t)((freq_word >> 14U) & 0x3FFFU);
 
-  DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET);
+  DdsWriteWord(AD9837_CTRL_B28 | AD9837_CTRL_RESET);
   DdsWriteWord(lsb_word);
   DdsWriteWord(msb_word);
 
   if (dds_running != 0U)
   {
-    DdsWriteWord(AD9833_CTRL_B28);
+    DdsWriteWord(AD9837_CTRL_B28);
   }
   else
   {
-    DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+    DdsWriteWord(AD9837_CTRL_B28 | AD9837_CTRL_RESET | AD9837_CTRL_SLEEP1);
   }
 }
 
@@ -755,7 +755,7 @@ static void DdsStart(void)
 static void DdsStop(void)
 {
   dds_running = 0U;
-  DdsWriteWord(AD9833_CTRL_B28 | AD9833_CTRL_RESET | AD9833_CTRL_SLEEP1);
+  DdsWriteWord(AD9837_CTRL_B28 | AD9837_CTRL_RESET | AD9837_CTRL_SLEEP1);
 }
 
 static void DdsSetFrequency(float freq_hz)
@@ -767,7 +767,7 @@ static void DdsSetFrequency(float freq_hz)
     return;
   }
 
-  tuning = ((double)freq_hz * 268435456.0) / AD9833_MCLK_HZ;
+  tuning = ((double)freq_hz * 268435456.0) / AD9837_MCLK_HZ;
   if (tuning > 268435455.0)
   {
     tuning = 268435455.0;
