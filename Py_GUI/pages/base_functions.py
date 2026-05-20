@@ -1784,8 +1784,9 @@ class BaseDAQPage(QWidget):
             self.tabs.setTabEnabled(EXTERNAL_SIGNAL_TAB, True)
         elif actuator == "Direct Digital Synthesis (DDS)":
             self.frequency_stack.setCurrentIndex(2 if sweep_mode else 0)
-            # disable Live Data
-            self.tabs.setTabEnabled(SWEEP_TAB, sweep_mode)
+            # Keep the internal DDS plotting tab available for both constant
+            # output and frequency sweep. Only the sweep controls are mode-specific.
+            self.tabs.setTabEnabled(SWEEP_TAB, True)
             self.start_dac.setEnabled(True)
             self.stop_dac.setEnabled(True)
             self.constant_freq.setEnabled(not sweep_mode)
