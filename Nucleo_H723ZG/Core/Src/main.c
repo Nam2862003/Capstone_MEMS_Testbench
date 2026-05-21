@@ -65,6 +65,7 @@
 
 #define BOARD_MODE_PE 0U
 #define BOARD_MODE_PR 1U
+#define BOARD_MODE_IDLE 2U
 
 #define ACTUATOR_MODE_NONE 0U
 #define ACTUATOR_MODE_DDS 1U
@@ -104,7 +105,7 @@ volatile uint8_t adc_stream_overrun = 0;
 #define CHUNK_SIZE 368 // number of samples to send in one UDP packet (must be <= active_buffer_size/2)
 volatile uint8_t dds_running = 0;
 volatile uint32_t dds_frequency_hz = 1000;
-volatile uint8_t board_mode = BOARD_MODE_PE;
+volatile uint8_t board_mode = BOARD_MODE_IDLE;
 volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
 volatile uint8_t pe_gain_index = 0;
 /* USER CODE END PV */
@@ -795,12 +796,19 @@ void set_board_mode(uint8_t mode)
         HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET); // TURN ON LED OF PR MODE, OFF IN PE MODE
         HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET); // TURN OFF LED OF PE MODE, ON IN PR MODE
     }
-    else
+    else if (mode == BOARD_MODE_PE)
     {
         board_mode = BOARD_MODE_PE;
         HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_RESET); // TURN OFF LED OF PR MODE, ON IN PE MODE
         HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_SET); // TURN ON LED OF PE MODE, OFF IN PR MODE
+    }
+    else
+    {
+        board_mode = BOARD_MODE_IDLE;
+        HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
     }
 }
 
@@ -1073,6 +1081,10 @@ void parse_command(char *cmd)
     else if (strncmp(cmd, "MODE,PR", 7) == 0)
     {
         set_board_mode(BOARD_MODE_PR);
+    }
+    else if ((strncmp(cmd, "MODE,IDLE", 9) == 0) || (strncmp(cmd, "MODE,NONE", 9) == 0))
+    {
+        set_board_mode(BOARD_MODE_IDLE);
     }
     else if (strncmp(cmd, "ACTUATOR,DDS", 12) == 0)
     {
