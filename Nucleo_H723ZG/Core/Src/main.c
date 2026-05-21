@@ -28,6 +28,7 @@
 #include "stm32h7xx_hal_adc.h"
 // #include "stm32h7xx_hal_dac.h"
 #include "string.h"
+#include <stdlib.h>
 #include <stdint.h>
 /* USER CODE END Includes */
 
@@ -530,7 +531,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 0x0;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
   hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
   hspi1.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
@@ -911,8 +912,9 @@ void update_adc_sampling_rate(uint32_t fs)
 
     __HAL_TIM_SET_AUTORELOAD(&htim6, period);
     __HAL_TIM_SET_COUNTER(&htim6, 0);
-    // if(was_running)
-    //     start_adc_acquisition();
+
+    if(was_running)
+        start_adc_acquisition();
 }
 void update_adc_resolution(uint32_t bits)
 {
@@ -1056,13 +1058,13 @@ void parse_command(char *cmd)
     {
         dds_stop();
     }
-    else if (strncmp(cmd, "DAC FREQ", 8) == 0)
+    else if (strncmp(cmd, "DAC FREQ,", 9) == 0)
     {
-        float freq_hz = 0.0f;
-        if (sscanf(cmd, "DAC FREQ,%f", &freq_hz) == 1)
-        {
-            dds_set_frequency(freq_hz);
-        }
+        dds_set_frequency((float)strtod(&cmd[9], NULL));
+    }
+    else if (strncmp(cmd, "DDS FREQ,", 9) == 0)
+    {
+        dds_set_frequency((float)strtod(&cmd[9], NULL));
     }
     else if (strncmp(cmd, "MODE,PE", 7) == 0)
     {
@@ -1156,6 +1158,7 @@ void process_adc_buffer_range(uint32_t start, uint32_t end)
     for (uint32_t i = start; i < end; i += CHUNK_SIZE)
     {
         send_adc_data(&adc_buffer[i], CHUNK_SIZE);
+        MX_LWIP_Process();
     }
 }
 
