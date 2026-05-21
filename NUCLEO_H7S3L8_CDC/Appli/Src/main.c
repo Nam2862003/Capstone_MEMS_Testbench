@@ -57,6 +57,7 @@
 
 #define BOARD_MODE_PE 0U
 #define BOARD_MODE_PR 1U
+#define BOARD_MODE_IDLE 2U
 
 #define ACTUATOR_MODE_NONE 0U
 #define ACTUATOR_MODE_DDS 1U
@@ -98,7 +99,7 @@ static char usb_command_buffer[96];
 static uint32_t usb_command_length;
 static volatile uint8_t dds_running = 0U;
 static volatile uint32_t dds_frequency_hz = 1000U;
-static volatile uint8_t board_mode = BOARD_MODE_PE;
+static volatile uint8_t board_mode = BOARD_MODE_IDLE;
 static volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
 static volatile uint8_t pe_gain_index = 0U;
 
@@ -132,6 +133,7 @@ static void DdsSetFrequency(float freq_hz);
 static void SetBoardMode(uint8_t mode);
 static void SetActuatorMode(uint8_t mode);
 static void SetPeGain(uint8_t gain_index);
+static void EnterIdleState(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -787,12 +789,19 @@ static void SetBoardMode(uint8_t mode)
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET); // TURN ON LED OF PR MODE, OFF IN PE MODE
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET); // TURN OFF LED OF PE MODE, ON IN PR MODE
   }
-  else
+  else if (mode == BOARD_MODE_PE)
   {
     board_mode = BOARD_MODE_PE;
     HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_RESET); // TURN OFF LED OF PR MODE, ON IN PE MODE
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_SET); // TURN ON LED OF PE MODE, OFF IN PR MODE
+  }
+  else
+  {
+    board_mode = BOARD_MODE_IDLE;
+    HAL_GPIO_WritePin(PE_PR_SEL_GPIO_Port, PE_PR_SEL_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
   }
 }
 
@@ -841,6 +850,22 @@ static void SetPeGain(uint8_t gain_index)
   HAL_GPIO_WritePin(PE_GAIN_A1_GPIO_Port,
                     PE_GAIN_A1_Pin,
                     (a1_state != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static void EnterIdleState(void)
+{
+  if (adc_running != 0U)
+  {
+    StopAdcAcquisition();
+  }
+
+  adc_stream_enabled = 0U;
+  DdsStop();
+  SetActuatorMode(ACTUATOR_MODE_STM32_DAC);
+  SetPeGain(0U);
+  SetBoardMode(BOARD_MODE_IDLE);
+  dma_half_complete = 0U;
+  dma_full_complete = 0U;
 }
 
 static void CDC_SendBytes(uint8_t *data, uint16_t length)
@@ -1092,6 +1117,8 @@ static uint8_t IsCompleteUsbCommand(const char *command)
       (strcmp(command, "DDS STOP") == 0) ||
       (strcmp(command, "MODE,PE") == 0) ||
       (strcmp(command, "MODE,PR") == 0) ||
+      (strcmp(command, "MODE,IDLE") == 0) ||
+      (strcmp(command, "MODE,NONE") == 0) ||
       (strcmp(command, "PCB,PE") == 0) ||
       (strcmp(command, "PCB,PR") == 0) ||
       (strcmp(command, "ACTUATOR,DDS") == 0) ||
@@ -1191,6 +1218,10 @@ static void ProcessUsbCommand(const char *command)
   else if ((strncmp(command, "MODE,PR", 7) == 0) || (strncmp(command, "PCB,PR", 6) == 0))
   {
     SetBoardMode(BOARD_MODE_PR);
+  }
+  else if ((strncmp(command, "MODE,IDLE", 9) == 0) || (strncmp(command, "MODE,NONE", 9) == 0))
+  {
+    EnterIdleState();
   }
   else if (strncmp(command, "ACTUATOR,DDS", 12) == 0)
   {

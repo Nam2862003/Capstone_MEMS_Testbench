@@ -32,7 +32,10 @@ class CommandSenderMixin:
 
     def set_board_mode(self, mode, send_now=True):
         normalized = str(mode).strip().upper()
-        if normalized not in {"PE", "PR"}:
+        if normalized == "NONE":
+            normalized = "IDLE"
+
+        if normalized not in {"PE", "PR", "IDLE"}:
             raise ValueError(f"Unsupported board mode: {mode}")
 
         self.board_mode = normalized
@@ -75,7 +78,7 @@ class CommandSenderMixin:
         ok = True
         ok = self.stop_aq() and ok
         ok = self.stop_gen() and ok
-        ok = self.set_board_mode("PE") and ok
+        ok = self.set_board_mode("IDLE") and ok
         ok = self.set_actuator_mode("STM32") and ok
         ok = self.set_pe_gain(0) and ok
         return ok

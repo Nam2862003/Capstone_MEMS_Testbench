@@ -1273,7 +1273,7 @@ class BaseDAQPage(QWidget):
 
         for sender in (self.udp_sender, self.usb_sender):
             if sender is not None:
-                sender.set_board_mode("PE", send_now=False)
+                sender.set_board_mode("IDLE", send_now=False)
                 sender.set_actuator_mode("STM32", send_now=False)
                 if hasattr(sender, "set_pe_gain"):
                     sender.set_pe_gain(0, send_now=False)

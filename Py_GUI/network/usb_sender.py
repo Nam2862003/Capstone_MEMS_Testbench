@@ -16,7 +16,7 @@ class USBSender(CommandSenderMixin):
         self.sent_count = 0
         self.error_count = 0
         self.last_error = ""
-        self.board_mode = "PE"
+        self.board_mode = "IDLE"
         self.actuator_mode = "STM32"
         self.pe_gain_index = 0
 

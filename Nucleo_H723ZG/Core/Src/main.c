@@ -142,6 +142,7 @@ void dds_set_frequency(float freq_hz);
 void set_board_mode(uint8_t mode);
 void set_actuator_mode(uint8_t mode);
 void set_pe_gain(uint8_t gain_index);
+void enter_idle_state(void);
 void process_adc_buffer_range(uint32_t start, uint32_t end);
 void process_half_buffer(void);
 void process_full_buffer(void);
@@ -863,6 +864,22 @@ void set_pe_gain(uint8_t gain_index)
     );
 }
 
+void enter_idle_state(void)
+{
+    if (adc_running != 0U)
+    {
+        stop_adc_acquisition();
+    }
+
+    dds_stop();
+    set_actuator_mode(ACTUATOR_MODE_STM32_DAC);
+    set_pe_gain(0U);
+    set_board_mode(BOARD_MODE_IDLE);
+    half_ready = 0U;
+    full_ready = 0U;
+    adc_stream_overrun = 0U;
+}
+
 void stop_adc_acquisition(void)
 {
     HAL_TIM_Base_Stop(&htim6);
@@ -1084,7 +1101,7 @@ void parse_command(char *cmd)
     }
     else if ((strncmp(cmd, "MODE,IDLE", 9) == 0) || (strncmp(cmd, "MODE,NONE", 9) == 0))
     {
-        set_board_mode(BOARD_MODE_IDLE);
+        enter_idle_state();
     }
     else if (strncmp(cmd, "ACTUATOR,DDS", 12) == 0)
     {
