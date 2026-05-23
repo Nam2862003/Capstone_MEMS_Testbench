@@ -12,7 +12,7 @@ import pyqtgraph as pg
 import numpy as np
 from lib.lock_in_amplifier import lock_in_amplifier
 from lib.fast_fourier_transform import fft_amplitude_phase
-from lib.root_mean_square import compute_rms_amplitude
+from lib.root_mean_square import compute_rms_amplitude, rms_amplitude
 
 
 class BaseDAQPage(QWidget):
@@ -58,6 +58,8 @@ class BaseDAQPage(QWidget):
         self.sweep_freqs = []
         self.sweep_amp = []
         self.sweep_phase = []
+        self.sweep_adc1_rms = []
+        self.sweep_adc2_rms = []
         self.last_freq = None
         self.sweeping = False
         self.current_freq = None
@@ -428,7 +430,7 @@ class BaseDAQPage(QWidget):
         # Graph 1 controls
         # =========================================================
         self.y_selector1 = QComboBox()
-        self.y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
+        self.y_selector1.addItems(["Raw ADC1 (V)", "ADC1 RMS (V)", "ADC2 RMS (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector1 = QComboBox()
         self.x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
@@ -470,7 +472,7 @@ class BaseDAQPage(QWidget):
         # Graph 2 controls
         # =========================================================
         self.y_selector2 = QComboBox()
-        self.y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
+        self.y_selector2.addItems(["Raw ADC2 (V)", "ADC1 RMS (V)", "ADC2 RMS (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.x_selector2 = QComboBox()
         self.x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
@@ -559,7 +561,7 @@ class BaseDAQPage(QWidget):
         # Graph 1 controls
         # =========================================================
         self.ext_y_selector1 = QComboBox()
-        self.ext_y_selector1.addItems(["Raw ADC1 (V)", "Amplitude (dB)", "Phase (deg)"])
+        self.ext_y_selector1.addItems(["Raw ADC1 (V)", "ADC1 RMS (V)", "ADC2 RMS (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector1 = QComboBox()
         self.ext_x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
@@ -591,7 +593,7 @@ class BaseDAQPage(QWidget):
         # Graph 2 controls
         # =========================================================
         self.ext_y_selector2 = QComboBox()
-        self.ext_y_selector2.addItems(["Raw ADC2 (V)", "Amplitude (dB)", "Phase (deg)"])
+        self.ext_y_selector2.addItems(["Raw ADC2 (V)", "ADC1 RMS (V)", "ADC2 RMS (V)", "Amplitude (dB)", "Phase (deg)"])
 
         self.ext_x_selector2 = QComboBox()
         self.ext_x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
@@ -1746,6 +1748,8 @@ class BaseDAQPage(QWidget):
         self.sweep_freqs.clear()
         self.sweep_amp.clear()
         self.sweep_phase.clear()
+        self.sweep_adc1_rms.clear()
+        self.sweep_adc2_rms.clear()
         self.resonance_peak = None
         self.last_freq = None
         # CLEAR PLOT
@@ -1816,6 +1820,10 @@ class BaseDAQPage(QWidget):
             if self.tabs.currentIndex() in (SWEEP_TAB, EXTERNAL_SIGNAL_TAB):
                 self.tabs.setCurrentIndex(SETUP_TAB)
 
+        if hasattr(self, "y_selector1") and hasattr(self, "ext_y_selector1"):
+            self.update_axis_constraints()
+            self.update_plot_labels()
+
     def get_active_plot_widgets(self):
         actuator = self.current_actuator()
         if actuator == "Function Generator":
@@ -1844,66 +1852,56 @@ class BaseDAQPage(QWidget):
                 "cursor1": self.cursor1,
                 "cursor2": self.cursor2,
             }
-    # Update axis options based on measurement method (e.g. disable Frequency x-axis for RMS)
+    def update_sweep_only_y_option(self, y_box, fallback):
+        sweep_mode = self.current_output_mode() == "Frequency Sweep"
+        model = y_box.model()
+
+        for i in range(y_box.count()):
+            if y_box.itemText(i) in ("ADC1 RMS (V)", "ADC2 RMS (V)"):
+                model.item(i).setEnabled(sweep_mode)
+                if not sweep_mode and y_box.currentText() in ("ADC1 RMS (V)", "ADC2 RMS (V)"):
+                    y_box.setCurrentText(fallback)
+
+    def apply_x_axis_constraints(self, y_box, x_box):
+        y_text = y_box.currentText()
+        model = x_box.model()
+
+        for i in range(x_box.count()):
+            x_text = x_box.itemText(i)
+
+            if y_text in ("Raw ADC1 (V)", "Raw ADC2 (V)"):
+                enabled = x_text != "Frequency (Hz)"
+                model.item(i).setEnabled(enabled)
+                if not enabled and x_box.currentText() == x_text:
+                    x_box.setCurrentText("Sample Index")
+
+            elif y_text in ("ADC1 RMS (V)", "ADC2 RMS (V)", "Amplitude (dB)", "Phase (deg)"):
+                enabled = x_text != "Sample Index"
+                model.item(i).setEnabled(enabled)
+                if not enabled and x_box.currentText() == x_text:
+                    x_box.setCurrentText("Frequency (Hz)")
+
+            else:
+                model.item(i).setEnabled(True)
+
+    # Update axis options based on measurement method (e.g. disable Frequency x-axis for raw ADC)
     def update_axis_constraints(self):
-        w = self.get_active_plot_widgets()
+        if not all(hasattr(self, attr) for attr in (
+            "y_selector1", "x_selector1", "y_selector2", "x_selector2",
+            "ext_y_selector1", "ext_x_selector1", "ext_y_selector2", "ext_x_selector2",
+        )):
+            return
 
-        y1_box = w["y1"]
-        x1_box = w["x1"]
-        y2_box = w["y2"]
-        x2_box = w["x2"]
+        axis_groups = (
+            (self.y_selector1, self.x_selector1, "Raw ADC1 (V)"),
+            (self.y_selector2, self.x_selector2, "Raw ADC2 (V)"),
+            (self.ext_y_selector1, self.ext_x_selector1, "Raw ADC1 (V)"),
+            (self.ext_y_selector2, self.ext_x_selector2, "Raw ADC2 (V)"),
+        )
 
-        # -------- GRAPH 1 --------
-        y1 = y1_box.currentText()
-        model1 = x1_box.model()
-
-        for i in range(x1_box.count()):
-            text = x1_box.itemText(i)
-
-            if y1 == "Raw ADC1 (V)":
-                if text == "Frequency (Hz)":
-                    model1.item(i).setEnabled(False)
-                    if x1_box.currentText() == "Frequency (Hz)":
-                        x1_box.setCurrentText("Sample Index")
-                else:
-                    model1.item(i).setEnabled(True)
-
-            elif y1 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Sample Index":
-                    model1.item(i).setEnabled(False)
-                    if x1_box.currentText() == "Sample Index":
-                        x1_box.setCurrentText("Frequency (Hz)")
-                else:
-                    model1.item(i).setEnabled(True)
-
-            else:
-                model1.item(i).setEnabled(True)
-
-        # -------- GRAPH 2 --------
-        y2 = y2_box.currentText()
-        model2 = x2_box.model()
-
-        for i in range(x2_box.count()):
-            text = x2_box.itemText(i)
-
-            if y2 == "Raw ADC2 (V)":
-                if text == "Frequency (Hz)":
-                    model2.item(i).setEnabled(False)
-                    if x2_box.currentText() == "Frequency (Hz)":
-                        x2_box.setCurrentText("Sample Index")
-                else:
-                    model2.item(i).setEnabled(True)
-
-            elif y2 in ["Amplitude (dB)", "Phase (deg)"]:
-                if text == "Sample Index":
-                    model2.item(i).setEnabled(False)
-                    if x2_box.currentText() == "Sample Index":
-                        x2_box.setCurrentText("Frequency (Hz)")
-                else:
-                    model2.item(i).setEnabled(True)
-
-            else:
-                model2.item(i).setEnabled(True)
+        for y_box, x_box, fallback in axis_groups:
+            self.update_sweep_only_y_option(y_box, fallback)
+            self.apply_x_axis_constraints(y_box, x_box)
     def update_plot_labels(self):
         w = self.get_active_plot_widgets()
 
@@ -1934,7 +1932,7 @@ class BaseDAQPage(QWidget):
         self.time_offset_1 = 0
         self.time_offset_2 = 0
 
-    def update_frequency_history(self, f_ref, amp, phase_deg):
+    def update_frequency_history(self, f_ref, amp, phase_deg, adc1_rms, adc2_rms):
         actuator = self.current_actuator()
 
         if actuator == "Function Generator":
@@ -1942,6 +1940,8 @@ class BaseDAQPage(QWidget):
                 self.sweep_freqs.append(f_ref)
                 self.sweep_amp.append(amp)
                 self.sweep_phase.append(phase_deg)
+                self.sweep_adc1_rms.append(adc1_rms)
+                self.sweep_adc2_rms.append(adc2_rms)
                 self.last_freq = f_ref
                 return
 
@@ -1949,11 +1949,15 @@ class BaseDAQPage(QWidget):
                 self.sweep_freqs.append(f_ref)
                 self.sweep_amp.append(amp)
                 self.sweep_phase.append(phase_deg)
+                self.sweep_adc1_rms.append(adc1_rms)
+                self.sweep_adc2_rms.append(adc2_rms)
                 self.last_freq = f_ref
             else:
                 self.sweep_freqs[-1] = f_ref
                 self.sweep_amp[-1] = amp
                 self.sweep_phase[-1] = phase_deg
+                self.sweep_adc1_rms[-1] = adc1_rms
+                self.sweep_adc2_rms[-1] = adc2_rms
                 self.last_freq = f_ref
             return
 
@@ -1961,6 +1965,8 @@ class BaseDAQPage(QWidget):
             self.sweep_freqs.append(f_ref)
             self.sweep_amp.append(amp)
             self.sweep_phase.append(phase_deg)
+            self.sweep_adc1_rms.append(adc1_rms)
+            self.sweep_adc2_rms.append(adc2_rms)
             self.last_freq = f_ref
 
     def estimate_resonance_peak(self, freqs, amps, phases=None):
@@ -2170,11 +2176,15 @@ class BaseDAQPage(QWidget):
         y2 = y2_box.currentText()
         x2 = x2_box.currentText()
 
-        self.update_frequency_history(f_ref, amp, np.degrees(phase))
+        adc1_rms = float(rms_amplitude(adc1)) if len(adc1) > 0 else 0.0
+        adc2_rms = float(rms_amplitude(adc2)) if len(adc2) > 0 else 0.0
+        self.update_frequency_history(f_ref, amp, np.degrees(phase), adc1_rms, adc2_rms)
 
         freqs = np.array(self.sweep_freqs)
         amps = np.array(self.sweep_amp)
         phases = np.array(self.sweep_phase)
+        adc1_rms_values = np.array(self.sweep_adc1_rms)
+        adc2_rms_values = np.array(self.sweep_adc2_rms)
 
         # only require sweep data if one graph is using frequency
         need_freq_data = (x1 == "Frequency (Hz)") or (x2 == "Frequency (Hz)")
@@ -2187,6 +2197,8 @@ class BaseDAQPage(QWidget):
             freqs = freqs[idx]
             amps = amps[idx]
             phases = phases[idx]
+            adc1_rms_values = adc1_rms_values[idx]
+            adc2_rms_values = adc2_rms_values[idx]
 
         self.update_resonance_display(freqs, amps, phases)
 
@@ -2203,6 +2215,10 @@ class BaseDAQPage(QWidget):
                 curve1.setData(freqs, amps)
             elif y1 == "Phase (deg)":
                 curve1.setData(freqs, phases)
+            elif y1 == "ADC1 RMS (V)":
+                curve1.setData(freqs, adc1_rms_values)
+            elif y1 == "ADC2 RMS (V)":
+                curve1.setData(freqs, adc2_rms_values)
             plot1.enableAutoRange(axis='y', enable=True)
         else:
             x = np.arange(len(adc1))
@@ -2219,6 +2235,10 @@ class BaseDAQPage(QWidget):
                 curve2.setData(freqs, amps)
             elif y2 == "Phase (deg)":
                 curve2.setData(freqs, phases)
+            elif y2 == "ADC1 RMS (V)":
+                curve2.setData(freqs, adc1_rms_values)
+            elif y2 == "ADC2 RMS (V)":
+                curve2.setData(freqs, adc2_rms_values)
             plot2.enableAutoRange(axis='y', enable=True)
         else:
             x = np.arange(len(adc2))
