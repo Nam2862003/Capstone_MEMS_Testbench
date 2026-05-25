@@ -164,6 +164,12 @@ QToolButton#ActuatorArrow::menu-indicator {
     width: 0px;
 }
 
+QLabel#OutputSelectionText {
+    color: #e0e0e0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
 /* =========================
    TABS (GENERAL)
 ========================= */

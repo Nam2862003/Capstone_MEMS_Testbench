@@ -3,8 +3,8 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QApplication,
     QGroupBox, QGridLayout, QHBoxLayout, QCheckBox, QMessageBox, QStackedWidget, QToolButton, QMenu, QSlider
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIntValidator, QAction
+from PyQt6.QtCore import Qt, QSize, QRectF
+from PyQt6.QtGui import QIntValidator, QAction, QColor, QPainter, QPen
 
 import time
 
@@ -13,6 +13,35 @@ import numpy as np
 from lib.lock_in_amplifier import lock_in_amplifier
 from lib.fast_fourier_transform import fft_amplitude_phase
 from lib.root_mean_square import compute_rms_amplitude, rms_amplitude
+
+
+class IosToggleSwitch(QCheckBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(48, 26)
+
+    def sizeHint(self):
+        return QSize(48, 26)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(Qt.PenStyle.NoPen))
+
+        track = QRectF(1, 1, self.width() - 2, self.height() - 2)
+        track_color = QColor("#0078d4") if self.isChecked() else QColor("#3a3a3a")
+        if not self.isEnabled():
+            track_color = QColor("#2a2a2a")
+
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(track, 12, 12)
+
+        knob_size = self.height() - 6
+        knob_x = self.width() - knob_size - 3 if self.isChecked() else 3
+        knob = QRectF(knob_x, 3, knob_size, knob_size)
+        painter.setBrush(QColor("#ffffff") if self.isEnabled() else QColor("#777777"))
+        painter.drawEllipse(knob)
 
 
 class BaseDAQPage(QWidget):
@@ -66,6 +95,7 @@ class BaseDAQPage(QWidget):
         self.resonance_peak = None
         self.selected_actuator = self.DEFAULT_ACTUATOR
         self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
+        self.output_selection_mode = "ADC"
         self.time_offset_1 = 0
         self.time_offset_2 = 0
         self.adc_running = False
@@ -188,13 +218,36 @@ class BaseDAQPage(QWidget):
         actuator_field_layout.addWidget(self.actuator_display, 1)
         actuator_field_layout.addWidget(self.actuator_arrow, 0)
         self.actuator_field.setLayout(actuator_field_layout)
+        self.actuator_field.setFixedWidth(300)
 
         self.actuator_menu = QMenu(self.actuator_field)
         self.actuator_field.mousePressEvent = self.show_actuator_menu
         self.actuator_display.mousePressEvent = self.show_actuator_menu
         self.actuator_arrow.clicked.connect(lambda: self.show_actuator_menu(None))
         self.build_actuator_menu()
-        dac_layout.addRow("Actuator:", self.actuator_field)
+
+        self.output_selection_switch = IosToggleSwitch()
+        self.output_selection_switch.setObjectName("OutputSelectionSwitch")
+        self.output_selection_switch.setChecked(False)
+        self.output_selection_switch.toggled.connect(self.on_output_selection_toggled)
+        self.output_selection_text = QLabel("ADC")
+        self.output_selection_text.setObjectName("OutputSelectionText")
+        self.output_selection_text.setFixedWidth(34)
+
+        output_selection_layout = QHBoxLayout()
+        output_selection_layout.setContentsMargins(0, 0, 0, 0)
+        output_selection_layout.setSpacing(8)
+        output_selection_layout.addWidget(self.actuator_field)
+        output_selection_layout.addSpacing(16)
+        output_selection_layout.addWidget(QLabel("Output selection:"))
+        output_selection_layout.addWidget(self.output_selection_switch)
+        output_selection_layout.addWidget(self.output_selection_text)
+        output_selection_layout.addStretch(1)
+
+        output_selection_row = QWidget()
+        output_selection_row.setLayout(output_selection_layout)
+        output_selection_row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        dac_layout.addRow("Actuator:", output_selection_row)
 
         # Mode selector
         self.mode_selector = QComboBox()
@@ -1203,6 +1256,34 @@ class BaseDAQPage(QWidget):
         checkbox.setChecked(checked)
         checkbox.blockSignals(False)
 
+    def set_output_selection_silently(self, mode):
+        normalized = str(mode).strip().upper()
+        checked = normalized == "BNC"
+
+        self.output_selection_mode = "BNC" if checked else "ADC"
+        if hasattr(self, "output_selection_switch"):
+            self.output_selection_switch.blockSignals(True)
+            self.output_selection_switch.setChecked(checked)
+            self.output_selection_switch.blockSignals(False)
+        if hasattr(self, "output_selection_text"):
+            self.output_selection_text.setText(self.output_selection_mode)
+
+    def on_output_selection_toggled(self, checked):
+        self.output_selection_mode = "BNC" if checked else "ADC"
+        if hasattr(self, "output_selection_text"):
+            self.output_selection_text.setText(self.output_selection_mode)
+        self.sync_output_selection_transport_mode()
+
+    def sync_output_selection_transport_mode(self):
+        if not hasattr(self, "sender"):
+            return
+
+        mode = getattr(self, "output_selection_mode", "ADC")
+        for sender in (self.udp_sender, self.usb_sender):
+            if sender is not None and hasattr(sender, "set_output_mode"):
+                send_now = sender is self.sender and self.active_transport_is_connected()
+                sender.set_output_mode(mode, send_now=send_now)
+
     def reset_transport_stats(self):
         for endpoint in (self.udp_sender, self.usb_sender, self.udp_receiver, self.usb_receiver):
             if endpoint is not None and hasattr(endpoint, "reset_stats"):
@@ -1223,6 +1304,7 @@ class BaseDAQPage(QWidget):
 
         self.selected_actuator = self.DEFAULT_ACTUATOR
         self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
+        self.set_output_selection_silently("ADC")
         self._refresh_actuator_menu_state()
 
         if hasattr(self, "sampling_rate_input"):
@@ -1277,6 +1359,8 @@ class BaseDAQPage(QWidget):
             if sender is not None:
                 sender.set_board_mode("IDLE", send_now=False)
                 sender.set_actuator_mode("STM32", send_now=False)
+                if hasattr(sender, "set_output_mode"):
+                    sender.set_output_mode("ADC", send_now=False)
                 if hasattr(sender, "set_pe_gain"):
                     sender.set_pe_gain(0, send_now=False)
 
@@ -1550,6 +1634,8 @@ class BaseDAQPage(QWidget):
                 self.sender.open()
                 self.sender.sync_board_mode()
                 self.sender.sync_actuator_mode()
+                if hasattr(self.sender, "sync_output_mode"):
+                    self.sender.sync_output_mode()
                 if hasattr(self.sender, "sync_pe_gain"):
                     self.sender.sync_pe_gain()
                 self.receiver.start()
@@ -1587,6 +1673,8 @@ class BaseDAQPage(QWidget):
                 self.sender.open()
                 self.sender.sync_board_mode()
                 self.sender.sync_actuator_mode()
+                if hasattr(self.sender, "sync_output_mode"):
+                    self.sender.sync_output_mode()
                 if hasattr(self.sender, "sync_pe_gain"):
                     self.sender.sync_pe_gain()
                 self.adc_running = False

@@ -64,6 +64,9 @@
 #define ACTUATOR_MODE_FUNCTION_GENERATOR 2U
 #define ACTUATOR_MODE_STM32_DAC 3U
 
+#define OUTPUT_MODE_BNC 0U
+#define OUTPUT_MODE_ADC 1U
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -101,6 +104,7 @@ static volatile uint8_t dds_running = 0U;
 static volatile uint32_t dds_frequency_hz = 1000U;
 static volatile uint8_t board_mode = BOARD_MODE_IDLE;
 static volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
+static volatile uint8_t output_mode = OUTPUT_MODE_BNC;
 static volatile uint8_t pe_gain_index = 0U;
 
 /* USER CODE END PV */
@@ -132,6 +136,7 @@ static void DdsStop(void);
 static void DdsSetFrequency(float freq_hz);
 static void SetBoardMode(uint8_t mode);
 static void SetActuatorMode(uint8_t mode);
+static void SetOutputMode(uint8_t mode);
 static void SetPeGain(uint8_t gain_index);
 static void EnterIdleState(void);
 /* USER CODE END PFP */
@@ -190,6 +195,7 @@ int main(void)
   MX_TIM6_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+  SetOutputMode(OUTPUT_MODE_BNC);
   HAL_ADC_Stop(&hadc1);
   HAL_ADC_Stop(&hadc2);
   /* Calibrate ADC1 (Master) */
@@ -812,21 +818,34 @@ static void SetActuatorMode(uint8_t mode)
   switch (mode)
   {
     case ACTUATOR_MODE_FUNCTION_GENERATOR:
-      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
+      // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
       break;
 
     case ACTUATOR_MODE_DDS:
-      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
-      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+      // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
       break;
 
     case ACTUATOR_MODE_STM32_DAC:
     default:
       actuator_mode = ACTUATOR_MODE_STM32_DAC;
       HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
       break;
+  }
+}
+
+static void SetOutputMode(uint8_t mode)
+{
+  if (mode == OUTPUT_MODE_ADC)
+  {
+    output_mode = OUTPUT_MODE_ADC;
+    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+  }
+  else
+  {
+    output_mode = OUTPUT_MODE_BNC;
+    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
   }
 }
 
@@ -1125,7 +1144,11 @@ static uint8_t IsCompleteUsbCommand(const char *command)
       (strcmp(command, "ACTUATOR,FG") == 0) ||
       (strcmp(command, "ACTUATOR,FUNCTION_GENERATOR") == 0) ||
       (strcmp(command, "ACTUATOR,STM32") == 0) ||
-      (strcmp(command, "ACTUATOR,STM32_DAC") == 0))
+      (strcmp(command, "ACTUATOR,STM32_DAC") == 0) ||
+      (strcmp(command, "OUTPUT?") == 0) ||
+      (strcmp(command, "OUTPUT,BNC") == 0) ||
+      (strcmp(command, "OUTPUT,ADC") == 0) ||
+      (strcmp(command, "BNC") == 0))
   {
     return 1U;
   }
@@ -1152,13 +1175,22 @@ static void ProcessUsbCommand(const char *command)
     adc_stream_enabled = 0U;
     (void)snprintf(response,
                    sizeof(response),
-                   "STATUS,B%u,A%u,G%u,DDS,%lu,%u\r\n",
+                   "STATUS,B%u,A%u,O%u,G%u,DDS,%lu,%u\r\n",
                    (unsigned int)board_mode,
                    (unsigned int)actuator_mode,
+                   (unsigned int)output_mode,
                    (unsigned int)pe_gain_index,
                    (unsigned long)dds_frequency_hz,
                    (unsigned int)dds_running);
     CDC_SendText(response);
+    adc_stream_enabled = stream_was_enabled;
+  }
+  else if (strcmp(command, "OUTPUT?") == 0)
+  {
+    uint8_t stream_was_enabled = adc_stream_enabled;
+
+    adc_stream_enabled = 0U;
+    CDC_SendText((output_mode == OUTPUT_MODE_ADC) ? "OUTPUT,ADC\r\n" : "OUTPUT,BNC\r\n");
     adc_stream_enabled = stream_was_enabled;
   }
   else if ((strcmp(command, "START") == 0) || (strcmp(command, "START ADC") == 0))
@@ -1236,6 +1268,14 @@ static void ProcessUsbCommand(const char *command)
            (strncmp(command, "ACTUATOR,STM32_DAC", 18) == 0))
   {
     SetActuatorMode(ACTUATOR_MODE_STM32_DAC);
+  }
+  else if ((strcmp(command, "OUTPUT,BNC") == 0) || (strcmp(command, "BNC") == 0))
+  {
+    SetOutputMode(OUTPUT_MODE_BNC);
+  }
+  else if (strcmp(command, "OUTPUT,ADC") == 0)
+  {
+    SetOutputMode(OUTPUT_MODE_ADC);
   }
   else if (strncmp(command, "PE GAIN", 7) == 0)
   {

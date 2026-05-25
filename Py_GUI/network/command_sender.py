@@ -61,6 +61,20 @@ class CommandSenderMixin:
     def sync_actuator_mode(self):
         return self.send(f"ACTUATOR,{self.actuator_mode}")
 
+    def set_output_mode(self, mode, send_now=True):
+        normalized = str(mode).strip().upper()
+        if normalized not in {"BNC", "ADC"}:
+            raise ValueError(f"Unsupported output mode: {mode}")
+
+        self.output_mode = normalized
+
+        if send_now:
+            return self.send(f"OUTPUT,{normalized}")
+        return True
+
+    def sync_output_mode(self):
+        return self.send(f"OUTPUT,{getattr(self, 'output_mode', 'ADC')}")
+
     def set_pe_gain(self, gain_index, send_now=True):
         index = int(gain_index)
         if index < 0 or index > 3:
@@ -80,5 +94,6 @@ class CommandSenderMixin:
         ok = self.stop_gen() and ok
         ok = self.set_board_mode("IDLE") and ok
         ok = self.set_actuator_mode("STM32") and ok
+        ok = self.set_output_mode("ADC") and ok
         ok = self.set_pe_gain(0) and ok
         return ok
