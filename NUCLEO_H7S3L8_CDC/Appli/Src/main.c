@@ -195,7 +195,6 @@ int main(void)
   MX_TIM6_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  SetOutputMode(OUTPUT_MODE_BNC);
   HAL_ADC_Stop(&hadc1);
   HAL_ADC_Stop(&hadc2);
   /* Calibrate ADC1 (Master) */

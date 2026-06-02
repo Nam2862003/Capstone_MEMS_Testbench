@@ -58,6 +58,8 @@ class BaseDAQPage(QWidget):
     DEFAULT_ACTUATOR = "STM32 DAC Output"
     DEFAULT_OUTPUT_MODE = "Frequency Sweep"
     DEFAULT_MEASUREMENT_METHOD = "Root Mean Square (RMS)"
+    DEFAULT_MAX_RESONANCE_PEAKS = 5
+    MIN_RESONANCE_SPACING_POINTS = 2
 
     def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
 
@@ -93,6 +95,7 @@ class BaseDAQPage(QWidget):
         self.sweeping = False
         self.current_freq = None
         self.resonance_peak = None
+        self.resonance_peaks = []
         self.selected_actuator = self.DEFAULT_ACTUATOR
         self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
         self.output_selection_mode = "ADC"
@@ -508,7 +511,7 @@ class BaseDAQPage(QWidget):
         row1.addWidget(self.cursor_readout1, 1)
         row1.addStretch()
 
-        self.show_resonance_checkbox = QCheckBox("Show resonance")
+        self.show_resonance_checkbox = QCheckBox("Show resonances")
         self.show_resonance_checkbox.setChecked(False)
         self.resonance_readout = QLabel("Resonance: --")
         self.resonance_readout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -520,7 +523,8 @@ class BaseDAQPage(QWidget):
         self.plot_widget1 = pg.PlotWidget()
         self.curve1 = self.plot_widget1.plot(pen='y')
         self.cursor1 = self.setup_cursor(self.plot_widget1, self.curve1)
-        self.resonance_marker1 = self.setup_resonance_marker(self.plot_widget1)
+        self.resonance_markers1 = self.setup_resonance_markers(self.plot_widget1)
+        self.resonance_marker1 = self.resonance_markers1[0]
         # =========================================================
         # Graph 2 controls
         # =========================================================
@@ -553,7 +557,8 @@ class BaseDAQPage(QWidget):
         self.plot_widget2 = pg.PlotWidget()
         self.curve2 = self.plot_widget2.plot(pen='r')
         self.cursor2 = self.setup_cursor(self.plot_widget2, self.curve2)
-        self.resonance_marker2 = self.setup_resonance_marker(self.plot_widget2)
+        self.resonance_markers2 = self.setup_resonance_markers(self.plot_widget2)
+        self.resonance_marker2 = self.resonance_markers2[0]
 
         # Optional: make combo boxes a bit cleaner
         self.y_selector1.setFixedWidth(140)
@@ -744,6 +749,12 @@ class BaseDAQPage(QWidget):
         }
         self.set_resonance_marker_visible(marker_dict, False)
         return marker_dict
+
+    def setup_resonance_markers(self, plot_widget):
+        return [
+            self.setup_resonance_marker(plot_widget)
+            for _ in range(self.DEFAULT_MAX_RESONANCE_PEAKS)
+        ]
 
     def set_resonance_marker_visible(self, marker_dict, visible):
         marker_dict["line"].setVisible(visible)
@@ -1839,6 +1850,7 @@ class BaseDAQPage(QWidget):
         self.sweep_adc1_rms.clear()
         self.sweep_adc2_rms.clear()
         self.resonance_peak = None
+        self.resonance_peaks = []
         self.last_freq = None
         # CLEAR PLOT
         self.curve1.clear()
@@ -2057,37 +2069,14 @@ class BaseDAQPage(QWidget):
             self.sweep_adc2_rms.append(adc2_rms)
             self.last_freq = f_ref
 
-    def estimate_resonance_peak(self, freqs, amps, phases=None):
-        freqs = np.asarray(freqs, dtype=float)
-        amps = np.asarray(amps, dtype=float)
-
-        valid = np.isfinite(freqs) & np.isfinite(amps)
-        if phases is not None:
-            phases = np.asarray(phases, dtype=float)
-            valid = valid & np.isfinite(phases)
-
-        freqs = freqs[valid]
-        amps = amps[valid]
-        if phases is not None:
-            phases = phases[valid]
-
-        if len(freqs) == 0:
-            return None
-
-        order = np.argsort(freqs)
-        freqs = freqs[order]
-        amps = amps[order]
-        if phases is not None:
-            phases = phases[order]
-
-        peak_index = int(np.argmax(amps))
+    def build_resonance_peak(self, freqs, amps, phases, peak_index):
         measured_freq = float(freqs[peak_index])
         measured_amp = float(amps[peak_index])
         peak_freq = measured_freq
         peak_amp = measured_amp
 
-        # Start from the highest measured point. Then use a 3-point quadratic
-        # interpolation only when it estimates a higher local summit around that point.
+        # Start from the measured point. Then use a 3-point quadratic
+        # interpolation only when it estimates a higher local summit nearby.
         if len(freqs) >= 3 and 0 < peak_index < len(freqs) - 1:
             fit_freqs = freqs[peak_index - 1:peak_index + 2]
             fit_amps = amps[peak_index - 1:peak_index + 2]
@@ -2121,16 +2110,81 @@ class BaseDAQPage(QWidget):
             "measured_amp": measured_amp,
         }
 
+    def estimate_resonance_peaks(self, freqs, amps, phases=None, max_peaks=None):
+        freqs = np.asarray(freqs, dtype=float)
+        amps = np.asarray(amps, dtype=float)
+        max_peaks = max_peaks or self.DEFAULT_MAX_RESONANCE_PEAKS
+
+        valid = np.isfinite(freqs) & np.isfinite(amps)
+        if phases is not None:
+            phases = np.asarray(phases, dtype=float)
+            valid = valid & np.isfinite(phases)
+
+        freqs = freqs[valid]
+        amps = amps[valid]
+        if phases is not None:
+            phases = phases[valid]
+
+        if len(freqs) == 0:
+            return []
+
+        order = np.argsort(freqs)
+        freqs = freqs[order]
+        amps = amps[order]
+        if phases is not None:
+            phases = phases[order]
+
+        peak_indices = []
+        if len(freqs) >= 3:
+            for i in range(1, len(freqs) - 1):
+                if amps[i] >= amps[i - 1] and amps[i] >= amps[i + 1]:
+                    if amps[i] > amps[i - 1] or amps[i] > amps[i + 1]:
+                        peak_indices.append(i)
+
+        if not peak_indices:
+            peak_indices = [int(np.argmax(amps))]
+
+        peak_indices = sorted(peak_indices, key=lambda i: amps[i], reverse=True)
+        diffs = np.diff(freqs)
+        positive_diffs = np.abs(diffs[np.nonzero(diffs)])
+        min_spacing_hz = 0.0
+        if len(positive_diffs) > 0:
+            min_spacing_hz = float(np.median(positive_diffs)) * self.MIN_RESONANCE_SPACING_POINTS
+
+        selected_indices = []
+        for peak_index in peak_indices:
+            peak_freq = float(freqs[peak_index])
+            too_close = any(
+                abs(peak_freq - float(freqs[selected_index])) < min_spacing_hz
+                for selected_index in selected_indices
+            )
+            if not too_close:
+                selected_indices.append(peak_index)
+            if len(selected_indices) >= max_peaks:
+                break
+
+        peaks = [
+            self.build_resonance_peak(freqs, amps, phases, peak_index)
+            for peak_index in selected_indices
+        ]
+        peaks.sort(key=lambda peak: peak["freq"])
+        return peaks
+
+    def estimate_resonance_peak(self, freqs, amps, phases=None):
+        peaks = self.estimate_resonance_peaks(freqs, amps, phases, max_peaks=1)
+        return peaks[0] if peaks else None
+
     def update_resonance_display(self, freqs=None, amps=None, phases=None):
         if not hasattr(self, "show_resonance_checkbox"):
             return
 
         enabled = self.show_resonance_checkbox.isChecked()
-        markers = [self.resonance_marker1, self.resonance_marker2]
+        marker_groups = [self.resonance_markers1, self.resonance_markers2]
 
         if not enabled:
-            for marker in markers:
-                self.set_resonance_marker_visible(marker, False)
+            for markers in marker_groups:
+                for marker in markers:
+                    self.set_resonance_marker_visible(marker, False)
             self.resonance_readout.setText("Resonance: --")
             return
 
@@ -2139,45 +2193,53 @@ class BaseDAQPage(QWidget):
             amps = np.array(self.sweep_amp)
             phases = np.array(self.sweep_phase)
 
-        peak = self.estimate_resonance_peak(freqs, amps, phases)
-        self.resonance_peak = peak
-        if peak is None:
-            for marker in markers:
-                self.set_resonance_marker_visible(marker, False)
+        peaks = self.estimate_resonance_peaks(freqs, amps, phases)
+        self.resonance_peaks = peaks
+        self.resonance_peak = max(peaks, key=lambda peak: peak["amp"]) if peaks else None
+        if not peaks:
+            for markers in marker_groups:
+                for marker in markers:
+                    self.set_resonance_marker_visible(marker, False)
             self.resonance_readout.setText("Resonance: collecting data...")
             return
 
-        phase_text = ""
-        if peak["phase"] is not None:
-            phase_text = f", phase {peak['phase']:.1f} deg"
-        fit_text = ""
-        if abs(peak["freq"] - peak["measured_freq"]) >= 0.5:
-            fit_text = f", measured {int(round(peak['measured_freq']))} Hz"
+        peak_text = ", ".join(
+            f"R{i + 1}: {peak['freq_int']} Hz"
+            for i, peak in enumerate(peaks)
+        )
+        strongest = self.resonance_peak
         self.resonance_readout.setText(
-            f"Resonance: {peak['freq_int']} Hz ({peak['freq']:.2f} Hz), "
-            f"{peak['amp']:.2f} dB{phase_text}{fit_text}"
+            f"Resonances: {peak_text} | strongest {strongest['freq_int']} Hz, "
+            f"{strongest['amp']:.2f} dB"
         )
 
         w = self.get_active_plot_widgets()
         plot_settings = (
-            (self.resonance_marker1, w["x1"].currentText(), w["y1"].currentText()),
-            (self.resonance_marker2, w["x2"].currentText(), w["y2"].currentText()),
+            (self.resonance_markers1, w["x1"].currentText(), w["y1"].currentText()),
+            (self.resonance_markers2, w["x2"].currentText(), w["y2"].currentText()),
         )
 
-        for marker, x_axis, y_axis in plot_settings:
+        for markers, x_axis, y_axis in plot_settings:
             if x_axis != "Frequency (Hz)":
-                self.set_resonance_marker_visible(marker, False)
+                for marker in markers:
+                    self.set_resonance_marker_visible(marker, False)
                 continue
 
-            y_value = peak["amp"]
-            if y_axis == "Phase (deg)" and peak["phase"] is not None:
-                y_value = peak["phase"]
+            for i, marker in enumerate(markers):
+                if i >= len(peaks):
+                    self.set_resonance_marker_visible(marker, False)
+                    continue
 
-            marker["line"].setPos(peak["freq"])
-            marker["marker"].setData([peak["freq"]], [y_value])
-            marker["label"].setText(f"{peak['freq_int']} Hz")
-            marker["label"].setPos(peak["freq"], y_value)
-            self.set_resonance_marker_visible(marker, True)
+                peak = peaks[i]
+                y_value = peak["amp"]
+                if y_axis == "Phase (deg)" and peak["phase"] is not None:
+                    y_value = peak["phase"]
+
+                marker["line"].setPos(peak["freq"])
+                marker["marker"].setData([peak["freq"]], [y_value])
+                marker["label"].setText(f"R{i + 1} {peak['freq_int']} Hz")
+                marker["label"].setPos(peak["freq"], y_value)
+                self.set_resonance_marker_visible(marker, True)
 
     def estimate_signal_frequency(self, signal, fs):
         if signal is None or len(signal) < 8 or fs <= 0:

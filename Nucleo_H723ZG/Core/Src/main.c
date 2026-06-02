@@ -57,11 +57,12 @@
 #define PE_GAIN_A0_Pin GPIO_PIN_13
 #define PE_GAIN_A1_GPIO_Port GPIOG
 #define PE_GAIN_A1_Pin GPIO_PIN_14
+
 #define AD9837_CTRL_B28 0x2000U
 #define AD9837_CTRL_RESET 0x0100U
 #define AD9837_CTRL_SLEEP1 0x0080U
 #define AD9837_FREQ0_REG 0x4000U
-#define AD9837_MCLK_HZ 16000000.0 // change from 16 MHz if your MCLK is different
+#define AD9837_MCLK_HZ 16000000.0 // 16 MHz reference clock for AD9837, adjust if using a different clock source
 
 #define BOARD_MODE_PE 0U
 #define BOARD_MODE_PR 1U
@@ -71,6 +72,9 @@
 #define ACTUATOR_MODE_DDS 1U
 #define ACTUATOR_MODE_FUNCTION_GENERATOR 2U
 #define ACTUATOR_MODE_STM32_DAC 3U
+
+#define OUTPUT_MODE_BNC 0U
+#define OUTPUT_MODE_ADC 1U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -107,6 +111,7 @@ volatile uint8_t dds_running = 0;
 volatile uint32_t dds_frequency_hz = 1000;
 volatile uint8_t board_mode = BOARD_MODE_IDLE;
 volatile uint8_t actuator_mode = ACTUATOR_MODE_DDS;
+static volatile uint8_t output_mode = OUTPUT_MODE_ADC;
 volatile uint8_t pe_gain_index = 0;
 /* USER CODE END PV */
 
@@ -142,6 +147,7 @@ void dds_set_frequency(float freq_hz);
 void set_board_mode(uint8_t mode);
 void set_actuator_mode(uint8_t mode);
 void set_pe_gain(uint8_t gain_index);
+void set_output_mode(uint8_t mode);
 void enter_idle_state(void);
 void process_adc_buffer_range(uint32_t start, uint32_t end);
 void process_half_buffer(void);
@@ -227,13 +233,6 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   dds_init();
-  // generate_sine_table();
-  // HAL_DAC_Start_DMA(&hdac1,
-  //                 DAC_CHANNEL_1,
-  //                 (uint32_t*)sine_table,
-  //                 SINE_SAMPLES,
-  //                 DAC_ALIGN_12B_R);
-
   HAL_ADC_Start(&hadc2);   // start slave ADC first
   HAL_ADCEx_MultiModeStart_DMA(
       &hadc1,
@@ -821,20 +820,34 @@ void set_actuator_mode(uint8_t mode)
     {
         case ACTUATOR_MODE_FUNCTION_GENERATOR:
             HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
-            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+            // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
             break;
 
         case ACTUATOR_MODE_DDS:
             HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+            // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
             break;
 
         case ACTUATOR_MODE_STM32_DAC:
         default:
             actuator_mode = ACTUATOR_MODE_STM32_DAC;
             HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
-            HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+            // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
             break;
+    }
+}
+
+void set_output_mode(uint8_t mode)
+{
+    if (mode == OUTPUT_MODE_ADC)
+    {
+        output_mode = OUTPUT_MODE_ADC;
+        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+    }
+    else
+    {
+        output_mode = OUTPUT_MODE_BNC;
+        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
     }
 }
 
@@ -1114,6 +1127,18 @@ void parse_command(char *cmd)
     else if (strncmp(cmd, "ACTUATOR,STM32", 14) == 0)
     {
         set_actuator_mode(ACTUATOR_MODE_STM32_DAC);
+    }
+    else if (strcmp(cmd, "OUTPUT?") == 0)
+    {
+        send_status_text((output_mode == OUTPUT_MODE_ADC) ? "OUTPUT,ADC\n" : "OUTPUT,BNC\n");
+    }
+    else if ((strcmp(cmd, "OUTPUT,BNC") == 0) || (strcmp(cmd, "BNC") == 0))
+    {
+        set_output_mode(OUTPUT_MODE_BNC);
+    }
+    else if (strcmp(cmd, "OUTPUT,ADC") == 0)
+    {
+        set_output_mode(OUTPUT_MODE_ADC);
     }
     else if (strncmp(cmd, "PE GAIN", 7) == 0)
     {
