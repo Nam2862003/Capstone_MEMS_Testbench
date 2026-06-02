@@ -1,6 +1,12 @@
-# Firmware and GUI Dependency Setup
+# Capstone MEMS Testbench Setup
 
-This document lists the tools needed to build, regenerate, flash, and run the MEMS testbench firmware and Python GUI.
+This document lists the tools needed to build, regenerate, flash, and run the Capstone MEMS Testbench firmware and Python GUI.
+
+All paths and commands below are written from the main repository folder:
+
+```text
+C:\STM32\Capstone_MEMS_Testbench
+```
 
 ## Project Folders
 
@@ -18,6 +24,8 @@ Install these tools on the development PC.
 - Visual Studio Code
 - CMake 3.22 or newer
 - Ninja
+  - The `ninja.exe` file can be stored anywhere, but its folder must be on the Windows `PATH`.
+  - On this PC, Windows currently finds Ninja at `C:\ninjia\ninja.exe`.
 - Arm GNU Toolchain / GCC Arm Embedded
   - Required executables include `arm-none-eabi-gcc`, `arm-none-eabi-g++`, `arm-none-eabi-objcopy`, and `arm-none-eabi-size`.
 - STM32CubeProgrammer
@@ -55,11 +63,12 @@ Common Windows paths to check:
 ```text
 C:\Program Files\CMake\bin
 C:\Program Files\Ninja
+C:\ninjia
 C:\Program Files (x86)\Arm GNU Toolchain arm-none-eabi\bin
 C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin
 ```
 
-The exact Arm toolchain folder name may vary depending on the installed version.
+The exact Ninja and Arm toolchain folder names may vary depending on where they were installed.
 
 ## Build the H723ZG Firmware
 
@@ -201,11 +210,14 @@ For UDP:
 These are build/runtime outputs and normally should not be committed:
 
 ```text
-build/
-.codex-build-check/
+Nucleo_H723ZG/build/
+NUCLEO_H7S3L8_CDC/build/
+NUCLEO_H7S3L8_CDC/.codex-build-check/
+Py_GUI/.venv/
+Py_GUI/__pycache__/
+Py_GUI/pages/__pycache__/
 __pycache__/
 *.pyc
-.venv/
 ```
 
 ## Quick Setup Checklist
