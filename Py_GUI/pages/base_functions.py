@@ -125,26 +125,46 @@ class BaseDAQPage(QWidget):
     # ============================================
     def build_setup_tab(self):
         layout = QVBoxLayout()
+        setup_label_width = 170
+
+        def make_setup_label(text):
+            label = QLabel(text)
+            label.setFixedWidth(setup_label_width)
+            return label
+
         # =========================
         # 1.1 ADC SETTINGS
         # =========================
 
         # Sampling rate
         self.adc_group = QGroupBox("Signal Acquisition (ADC)")
-        adc_layout = QFormLayout()
+        adc_layout = QVBoxLayout()
+        adc_grid = QGridLayout()
+        adc_grid.setHorizontalSpacing(8)
+        adc_grid.setVerticalSpacing(8)
         self.sampling_rate_input = QLineEdit(self.DEFAULT_SAMPLING_RATE)
-        adc_layout.addRow("Sampling Rate (Hz):", self.sampling_rate_input)
+        self.sampling_rate_input.setMinimumWidth(0)
+        adc_grid.addWidget(make_setup_label("Sampling Rate (Hz):"), 0, 0)
+        adc_grid.addWidget(self.sampling_rate_input, 0, 1, 1, 5)
 
         # Buffer size
         self.buffer = QLineEdit(self.DEFAULT_BUFFER_SIZE)
         self.buffer.setValidator(QIntValidator(0, 50000, self))
-        adc_layout.addRow("Buffer Size:", self.buffer)
+        self.buffer.setMinimumWidth(0)
+        adc_grid.addWidget(make_setup_label("Buffer Size:"), 1, 0)
+        adc_grid.addWidget(self.buffer, 1, 1, 1, 5)
 
         #Resolution (optional, for display purposes only)
         self.resolution = QComboBox()
         self.resolution.addItems(self.ALL_ADC_RESOLUTIONS)
         self.resolution.setCurrentText(self.DEFAULT_ADC_RESOLUTION)
-        adc_layout.addRow("ADC Resolution:", self.resolution)
+        self.resolution.setMinimumWidth(0)
+        adc_grid.addWidget(make_setup_label("ADC Resolution:"), 2, 0)
+        adc_grid.addWidget(self.resolution, 2, 1, 1, 5)
+        adc_grid.setColumnStretch(1, 1)
+        adc_grid.setColumnStretch(3, 1)
+        adc_grid.setColumnStretch(5, 1)
+        adc_layout.addLayout(adc_grid)
         
 
         # Control buttons
@@ -153,7 +173,7 @@ class BaseDAQPage(QWidget):
         self.stop_adc=QPushButton("Stop ADC")
         button_layout.addWidget(self.start_adc, 0, 1)
         button_layout.addWidget(self.stop_adc, 0, 2)
-        adc_layout.addRow(button_layout)
+        adc_layout.addLayout(button_layout)
         self.adc_group.setLayout(adc_layout)
         self.adc_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         # =========================
@@ -162,7 +182,7 @@ class BaseDAQPage(QWidget):
 
         # DAC frequency
         self.dac_group = QGroupBox("Signal Generation (DAC)")
-        dac_layout = QFormLayout()
+        dac_layout = QVBoxLayout()
         # self.dac_freq_input = QLineEdit("1000")  # 1 kHz default
         # dac_layout.addRow("Frequency (Hz):", self.dac_freq_input)
         # Frequency inputs
@@ -171,6 +191,14 @@ class BaseDAQPage(QWidget):
         self.start_freq = QLineEdit(self.DEFAULT_START_FREQ)
         self.stop_freq = QLineEdit(self.DEFAULT_STOP_FREQ)
         self.step_freq = QLineEdit(self.DEFAULT_STEP_FREQ)
+        for freq_input in (
+            self.constant_freq,
+            self.external_ref_freq,
+            self.start_freq,
+            self.stop_freq,
+            self.step_freq,
+        ):
+            freq_input.setMinimumWidth(0)
 
         self.frequency_stack = QStackedWidget()
 
@@ -189,13 +217,12 @@ class BaseDAQPage(QWidget):
         external_ref_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         sweep_page = QWidget()
-        sweep_layout = QHBoxLayout()
+        sweep_layout = QGridLayout()
         sweep_layout.setContentsMargins(0, 0, 0, 0)
-        sweep_layout.addWidget(self.start_freq)
-        sweep_layout.addWidget(QLabel("to"))
-        sweep_layout.addWidget(self.stop_freq)
-        sweep_layout.addWidget(QLabel("Step:"))
-        sweep_layout.addWidget(self.step_freq)
+        sweep_layout.setHorizontalSpacing(8)
+        sweep_layout.setColumnStretch(0, 1)
+        sweep_layout.setColumnStretch(2, 1)
+        sweep_layout.setColumnStretch(4, 1)
         sweep_page.setLayout(sweep_layout)
         sweep_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -203,7 +230,19 @@ class BaseDAQPage(QWidget):
         self.frequency_stack.addWidget(external_ref_page)
         self.frequency_stack.addWidget(sweep_page)
         self.frequency_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        dac_layout.addRow("Frequency (Hz):", self.frequency_stack)
+        self.frequency_stack.setMinimumWidth(0)
+        dac_grid = QGridLayout()
+        dac_grid.setHorizontalSpacing(8)
+        dac_grid.setVerticalSpacing(8)
+        dac_grid.addWidget(make_setup_label("Frequency (Hz):"), 0, 0)
+        dac_grid.addWidget(self.frequency_stack, 0, 1)
+        dac_grid.addWidget(self.start_freq, 0, 1)
+        self.freq_to_label = QLabel("to")
+        self.freq_step_label = QLabel("Step:")
+        dac_grid.addWidget(self.freq_to_label, 0, 2)
+        dac_grid.addWidget(self.stop_freq, 0, 3)
+        dac_grid.addWidget(self.freq_step_label, 0, 4)
+        dac_grid.addWidget(self.step_freq, 0, 5)
 
         # Actuator / mode menu field
         self.actuator_field = QWidget()
@@ -221,7 +260,7 @@ class BaseDAQPage(QWidget):
         actuator_field_layout.addWidget(self.actuator_display, 1)
         actuator_field_layout.addWidget(self.actuator_arrow, 0)
         self.actuator_field.setLayout(actuator_field_layout)
-        self.actuator_field.setFixedWidth(300)
+        self.actuator_field.setMinimumWidth(0)
 
         self.actuator_menu = QMenu(self.actuator_field)
         self.actuator_field.mousePressEvent = self.show_actuator_menu
@@ -236,21 +275,21 @@ class BaseDAQPage(QWidget):
         self.output_selection_text = QLabel("ADC")
         self.output_selection_text.setObjectName("OutputSelectionText")
         self.output_selection_text.setFixedWidth(34)
+        self.output_selection_spacer = QWidget()
 
-        output_selection_layout = QHBoxLayout()
-        output_selection_layout.setContentsMargins(0, 0, 0, 0)
-        output_selection_layout.setSpacing(8)
-        output_selection_layout.addWidget(self.actuator_field)
-        output_selection_layout.addSpacing(16)
-        output_selection_layout.addWidget(QLabel("Output selection:"))
-        output_selection_layout.addWidget(self.output_selection_switch)
-        output_selection_layout.addWidget(self.output_selection_text)
-        output_selection_layout.addStretch(1)
+        output_switch_row = QHBoxLayout()
+        output_switch_row.setContentsMargins(0, 0, 0, 0)
+        output_switch_row.setSpacing(8)
+        output_switch_row.addWidget(self.output_selection_switch)
+        output_switch_row.addWidget(self.output_selection_text)
+        output_switch_row.addStretch()
+        output_switch_widget = QWidget()
+        output_switch_widget.setLayout(output_switch_row)
 
-        output_selection_row = QWidget()
-        output_selection_row.setLayout(output_selection_layout)
-        output_selection_row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        dac_layout.addRow("Actuator:", output_selection_row)
+        dac_grid.addWidget(make_setup_label("Actuator:"), 1, 0)
+        dac_grid.addWidget(self.actuator_field, 1, 1, 1, 3)
+        dac_grid.addWidget(self.output_selection_spacer, 1, 4)
+        dac_grid.addWidget(output_switch_widget, 1, 5)
 
         # Mode selector
         self.mode_selector = QComboBox()
@@ -259,14 +298,20 @@ class BaseDAQPage(QWidget):
             "Fast Fourier Transform (FFT)",
             "Lock-in Amplifier",
         ])
-        dac_layout.addRow("Measurement Method:", self.mode_selector)
+        self.mode_selector.setMinimumWidth(0)
+        dac_grid.addWidget(make_setup_label("Measurement Method:"), 2, 0)
+        dac_grid.addWidget(self.mode_selector, 2, 1, 1, 5)
+        dac_grid.setColumnStretch(1, 1)
+        dac_grid.setColumnStretch(3, 1)
+        dac_grid.setColumnStretch(5, 1)
+        dac_layout.addLayout(dac_grid)
         # DAC control buttons
         button_layout = QGridLayout()
         self.start_dac = QPushButton("Start DAC")
         self.stop_dac = QPushButton("Stop DAC")
         button_layout.addWidget(self.start_dac, 0, 0)
         button_layout.addWidget(self.stop_dac, 0, 1)
-        dac_layout.addRow(button_layout)
+        dac_layout.addLayout(button_layout)
         self.dac_group.setLayout(dac_layout)
         self.dac_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 
@@ -425,10 +470,28 @@ class BaseDAQPage(QWidget):
         # self.setup.setLayout(layout)
 
         # Vertical layout for ADC and DAC groups
+        adc_panel = QWidget()
+        adc_panel_layout = QVBoxLayout()
+        adc_panel_layout.setContentsMargins(0, 0, 0, 0)
+        adc_panel_layout.addWidget(self.adc_group, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        adc_panel.setLayout(adc_panel_layout)
+        adc_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        adc_panel.setMinimumWidth(0)
+
+        dac_panel = QWidget()
+        dac_panel_layout = QVBoxLayout()
+        dac_panel_layout.setContentsMargins(0, 0, 0, 0)
+        dac_panel_layout.addWidget(self.dac_group, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        dac_panel.setLayout(dac_panel_layout)
+        dac_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        dac_panel.setMinimumWidth(0)
+
         main_row = QHBoxLayout()
         main_row.setAlignment(Qt.AlignmentFlag.AlignTop)
-        main_row.addWidget(self.adc_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
-        main_row.addWidget(self.dac_group, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(adc_panel, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.addWidget(dac_panel, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        main_row.setStretch(0, 1)
+        main_row.setStretch(1, 1)
         layout.addLayout(main_row)
         for extra_group in self.build_setup_extension_groups():
             layout.addWidget(extra_group)
@@ -506,9 +569,10 @@ class BaseDAQPage(QWidget):
         self.show_resonance_checkbox = QCheckBox("Resonances")
         self.show_resonance_checkbox.setObjectName("CursorToggle")
         self.show_resonance_checkbox.setChecked(False)
-        self.export_sweep_button = QPushButton("Export CSV")
+        self.export_sweep_button = QPushButton("Export")
+        self.export_sweep_button.setFixedWidth(100)
         row1.addWidget(self.show_resonance_checkbox, 0, 4)
-        row1.addWidget(self.export_sweep_button, 0, 5)
+        row1.addWidget(self.export_sweep_button, 0, 7)
         row1.addWidget(self.cursor_checkbox1, 1, 0)
         row1.addWidget(self.cursor_mode1, 1, 1)
         row1.setColumnStretch(6, 1)
@@ -642,9 +706,10 @@ class BaseDAQPage(QWidget):
         self.ext_show_resonance_checkbox = QCheckBox("Resonances")
         self.ext_show_resonance_checkbox.setObjectName("CursorToggle")
         self.ext_show_resonance_checkbox.setChecked(False)
-        self.ext_export_sweep_button = QPushButton("Export CSV")
+        self.ext_export_sweep_button = QPushButton("Export")
+        self.ext_export_sweep_button.setFixedWidth(100)
         row1.addWidget(self.ext_show_resonance_checkbox, 0, 4)
-        row1.addWidget(self.ext_export_sweep_button, 0, 5)
+        row1.addWidget(self.ext_export_sweep_button, 0, 7)
         row1.addWidget(self.ext_cursor_checkbox1, 1, 0)
         row1.addWidget(self.ext_cursor_mode1, 1, 1)
         row1.setColumnStretch(6, 1)
@@ -1579,13 +1644,23 @@ class BaseDAQPage(QWidget):
     def build_actuator_menu(self):
         actuator_modes = {
             "Direct Digital Synthesis (DDS)": ["Constant Output", "Frequency Sweep"],
-            "Function Generator": ["Constant Output", "Frequency Sweep"],
+            "Function Generator": None,
             "STM32 DAC Output": ["Constant Output", "Frequency Sweep"],
         }
 
         self.actuator_menu.clear()
         self.actuator_actions = {}
         for actuator_name, modes in actuator_modes.items():
+            if modes is None:
+                action = QAction(actuator_name, self)
+                action.setCheckable(True)
+                action.triggered.connect(
+                    lambda checked=False, a=actuator_name: self.select_actuator_mode(a, "Constant Output")
+                )
+                self.actuator_menu.addAction(action)
+                self.actuator_actions[(actuator_name, None)] = action
+                continue
+
             submenu = self.actuator_menu.addMenu(actuator_name)
             for mode_name in modes:
                 action = QAction(mode_name, self)
@@ -1610,15 +1685,21 @@ class BaseDAQPage(QWidget):
     def _refresh_actuator_menu_state(self):
         if hasattr(self, "actuator_actions"):
             for (actuator_name, mode_name), action in self.actuator_actions.items():
-                action.setChecked(
-                    actuator_name == self.selected_actuator and mode_name == self.selected_output_mode
-                )
+                if mode_name is None:
+                    action.setChecked(actuator_name == self.selected_actuator)
+                else:
+                    action.setChecked(
+                        actuator_name == self.selected_actuator and mode_name == self.selected_output_mode
+                    )
 
         if hasattr(self, "actuator_display"):
             self.actuator_display.setText(self.selected_actuator)
 
         if hasattr(self, "actuator_field"):
-            self.actuator_field.setToolTip(f"{self.selected_actuator} / {self.selected_output_mode}")
+            if self.selected_actuator == "Function Generator":
+                self.actuator_field.setToolTip(self.selected_actuator)
+            else:
+                self.actuator_field.setToolTip(f"{self.selected_actuator} / {self.selected_output_mode}")
 
     def show_actuator_menu(self, event):
         if hasattr(self, "actuator_menu") and hasattr(self, "actuator_field"):
@@ -1892,6 +1973,26 @@ class BaseDAQPage(QWidget):
         actuator = self.current_actuator()
         output_mode = self.current_output_mode()
         sweep_mode = output_mode == "Frequency Sweep"
+
+        if hasattr(self, "freq_to_label"):
+            show_sweep_frequency_fields = actuator != "Function Generator" and sweep_mode
+            self.frequency_stack.setVisible(not show_sweep_frequency_fields)
+            self.start_freq.setVisible(show_sweep_frequency_fields)
+            self.freq_to_label.setVisible(True)
+            self.stop_freq.setVisible(True)
+            self.freq_step_label.setVisible(True)
+            self.step_freq.setVisible(True)
+
+            self.freq_to_label.setEnabled(show_sweep_frequency_fields)
+            self.stop_freq.setEnabled(show_sweep_frequency_fields)
+            self.freq_step_label.setEnabled(show_sweep_frequency_fields)
+            self.step_freq.setEnabled(show_sweep_frequency_fields)
+
+            self.freq_to_label.setStyleSheet("" if show_sweep_frequency_fields else "color: transparent;")
+            self.freq_step_label.setStyleSheet("" if show_sweep_frequency_fields else "color: transparent;")
+            self.stop_freq.setStyleSheet("" if show_sweep_frequency_fields else "color: transparent; background: transparent; border: 0px;")
+            self.step_freq.setStyleSheet("" if show_sweep_frequency_fields else "color: transparent; background: transparent; border: 0px;")
+            self.output_selection_spacer.setVisible(True)
 
         # tab indexes (IMPORTANT: adjust if different)
         SETUP_TAB = 0
