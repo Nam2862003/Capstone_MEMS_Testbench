@@ -6,6 +6,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QRectF
 from PyQt6.QtGui import QIntValidator, QAction, QColor, QPainter, QPen
 
+import csv
+from datetime import datetime
+from pathlib import Path
 import time
 
 import pyqtgraph as pg
@@ -58,7 +61,7 @@ class BaseDAQPage(QWidget):
     DEFAULT_ACTUATOR = "STM32 DAC Output"
     DEFAULT_OUTPUT_MODE = "Frequency Sweep"
     DEFAULT_MEASUREMENT_METHOD = "Root Mean Square (RMS)"
-    DEFAULT_MAX_RESONANCE_PEAKS = 5
+    DEFAULT_MAX_RESONANCE_PEAKS = 2
     MIN_RESONANCE_SPACING_POINTS = 2
 
     def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
@@ -181,10 +184,7 @@ class BaseDAQPage(QWidget):
         external_ref_page = QWidget()
         external_ref_layout = QHBoxLayout()
         external_ref_layout.setContentsMargins(0, 0, 0, 0)
-        self.auto_ref_freq_checkbox = QCheckBox("Auto")
-        self.auto_ref_freq_checkbox.setChecked(False)
         external_ref_layout.addWidget(self.external_ref_freq)
-        external_ref_layout.addWidget(self.auto_ref_freq_checkbox)
         external_ref_page.setLayout(external_ref_layout)
         external_ref_page.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -461,7 +461,6 @@ class BaseDAQPage(QWidget):
         self.usb_disconnect_btn.clicked.connect(self.disconnect_transport)
         self.transport_selector.currentIndexChanged.connect(self.update_transport_panel)
         self.detect_board_btn.clicked.connect(lambda: self.detect_board())
-        self.auto_ref_freq_checkbox.toggled.connect(self.update_actuator)
         self.usb_refresh_ports_btn.clicked.connect(self.refresh_usb_ports)
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
@@ -491,33 +490,36 @@ class BaseDAQPage(QWidget):
         self.x_selector1 = QComboBox()
         self.x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Graph 1 Y:"))
-        row1.addWidget(self.y_selector1)
-        row1.addSpacing(20)
-        row1.addWidget(QLabel("X:"))
-        row1.addWidget(self.x_selector1)
+        row1 = QGridLayout()
+        row1.setHorizontalSpacing(20)
+        row1.setVerticalSpacing(6)
+        row1.addWidget(QLabel("Graph 1 Y:"), 0, 0)
+        row1.addWidget(self.y_selector1, 0, 1)
+        row1.addWidget(QLabel("X:"), 0, 2)
+        row1.addWidget(self.x_selector1, 0, 3)
 
         self.cursor_checkbox1 = QCheckBox("Cursors")
         self.cursor_checkbox1.setObjectName("CursorToggle")
         self.cursor_checkbox1.setChecked(False)
         self.cursor_mode1 = QComboBox()
         self.cursor_mode1.addItems(["Vertical", "Horizontal", "Track"])
-        row1.addSpacing(20)
-        row1.addWidget(self.cursor_checkbox1)
-        row1.addWidget(self.cursor_mode1)
-        self.cursor_readout1 = QLabel()
-        self.cursor_readout1.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row1.addWidget(self.cursor_readout1, 1)
-        row1.addStretch()
-
-        self.show_resonance_checkbox = QCheckBox("Show resonances")
+        self.show_resonance_checkbox = QCheckBox("Resonances")
+        self.show_resonance_checkbox.setObjectName("CursorToggle")
         self.show_resonance_checkbox.setChecked(False)
-        self.resonance_readout = QLabel("Resonance: --")
+        self.export_sweep_button = QPushButton("Export CSV")
+        row1.addWidget(self.show_resonance_checkbox, 0, 4)
+        row1.addWidget(self.export_sweep_button, 0, 5)
+        row1.addWidget(self.cursor_checkbox1, 1, 0)
+        row1.addWidget(self.cursor_mode1, 1, 1)
+        row1.setColumnStretch(6, 1)
+
+        self.cursor_readout1 = QLabel()
+        self.cursor_readout1.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.cursor_readout1.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.resonance_readout = QLabel("")
+        self.resonance_readout.setVisible(False)
         self.resonance_readout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        resonance_row = QHBoxLayout()
-        resonance_row.addWidget(self.show_resonance_checkbox)
-        resonance_row.addWidget(self.resonance_readout, 1)
+        row1.addWidget(self.cursor_readout1, 1, 2, 1, 5)
 
         # Graph 1 plot
         self.plot_widget1 = pg.PlotWidget()
@@ -534,24 +536,25 @@ class BaseDAQPage(QWidget):
         self.x_selector2 = QComboBox()
         self.x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
 
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Graph 2 Y:"))
-        row2.addWidget(self.y_selector2)
-        row2.addSpacing(20)
-        row2.addWidget(QLabel("X:"))
-        row2.addWidget(self.x_selector2)
+        row2 = QGridLayout()
+        row2.setHorizontalSpacing(20)
+        row2.setVerticalSpacing(6)
+        row2.addWidget(QLabel("Graph 2 Y:"), 0, 0)
+        row2.addWidget(self.y_selector2, 0, 1)
+        row2.addWidget(QLabel("X:"), 0, 2)
+        row2.addWidget(self.x_selector2, 0, 3)
         self.cursor_checkbox2 = QCheckBox("Cursors")
         self.cursor_checkbox2.setObjectName("CursorToggle")
         self.cursor_checkbox2.setChecked(False)
         self.cursor_mode2 = QComboBox()
         self.cursor_mode2.addItems(["Vertical", "Horizontal", "Track"])
-        row2.addSpacing(20)
-        row2.addWidget(self.cursor_checkbox2)
-        row2.addWidget(self.cursor_mode2)
+        row2.addWidget(self.cursor_checkbox2, 1, 0)
+        row2.addWidget(self.cursor_mode2, 1, 1)
+        row2.setColumnStretch(4, 1)
         self.cursor_readout2 = QLabel()
-        self.cursor_readout2.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row2.addWidget(self.cursor_readout2, 1)
-        row2.addStretch()
+        self.cursor_readout2.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.cursor_readout2.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        row2.addWidget(self.cursor_readout2, 1, 2, 1, 3)
 
         # Graph 2 plot
         self.plot_widget2 = pg.PlotWidget()
@@ -565,8 +568,8 @@ class BaseDAQPage(QWidget):
         self.x_selector1.setFixedWidth(140)
         self.y_selector2.setFixedWidth(140)
         self.x_selector2.setFixedWidth(140)
-        self.cursor_mode1.setFixedWidth(120)
-        self.cursor_mode2.setFixedWidth(120)
+        self.cursor_mode1.setFixedWidth(140)
+        self.cursor_mode2.setFixedWidth(140)
 
         # Link x axis
         self.plot_widget2.setXLink(self.plot_widget1)
@@ -583,7 +586,6 @@ class BaseDAQPage(QWidget):
 
         # Add in the order you want
         layout.addLayout(row1)
-        layout.addLayout(resonance_row)
         layout.addWidget(self.plot_widget1, 1)
         layout.addLayout(row2)
         layout.addWidget(self.plot_widget2, 1)
@@ -610,6 +612,7 @@ class BaseDAQPage(QWidget):
         self.attach_cursor_controls(self.cursor1, self.cursor_checkbox1, self.cursor_mode1, self.cursor_readout1)
         self.attach_cursor_controls(self.cursor2, self.cursor_checkbox2, self.cursor_mode2, self.cursor_readout2)
         self.show_resonance_checkbox.toggled.connect(lambda _: self.update_resonance_display())
+        self.export_sweep_button.clicked.connect(self.export_current_plot_data)
     # =========================
     # 3. External TAB (enable Function generator selection)
     # =========================
@@ -624,29 +627,38 @@ class BaseDAQPage(QWidget):
         self.ext_x_selector1 = QComboBox()
         self.ext_x_selector1.addItems(["Sample Index", "Frequency (Hz)"])
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Graph 1 Y:"))
-        row1.addWidget(self.ext_y_selector1)
-        row1.addSpacing(20)
-        row1.addWidget(QLabel("X:"))
-        row1.addWidget(self.ext_x_selector1)
+        row1 = QGridLayout()
+        row1.setHorizontalSpacing(20)
+        row1.setVerticalSpacing(6)
+        row1.addWidget(QLabel("Graph 1 Y:"), 0, 0)
+        row1.addWidget(self.ext_y_selector1, 0, 1)
+        row1.addWidget(QLabel("X:"), 0, 2)
+        row1.addWidget(self.ext_x_selector1, 0, 3)
         self.ext_cursor_checkbox1 = QCheckBox("Cursors")
         self.ext_cursor_checkbox1.setObjectName("CursorToggle")
         self.ext_cursor_checkbox1.setChecked(False)
         self.ext_cursor_mode1 = QComboBox()
         self.ext_cursor_mode1.addItems(["Vertical", "Horizontal", "Track"])
-        row1.addSpacing(20)
-        row1.addWidget(self.ext_cursor_checkbox1)
-        row1.addWidget(self.ext_cursor_mode1)
+        self.ext_show_resonance_checkbox = QCheckBox("Resonances")
+        self.ext_show_resonance_checkbox.setObjectName("CursorToggle")
+        self.ext_show_resonance_checkbox.setChecked(False)
+        self.ext_export_sweep_button = QPushButton("Export CSV")
+        row1.addWidget(self.ext_show_resonance_checkbox, 0, 4)
+        row1.addWidget(self.ext_export_sweep_button, 0, 5)
+        row1.addWidget(self.ext_cursor_checkbox1, 1, 0)
+        row1.addWidget(self.ext_cursor_mode1, 1, 1)
+        row1.setColumnStretch(6, 1)
+
         self.ext_cursor_readout1 = QLabel()
-        self.ext_cursor_readout1.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row1.addWidget(self.ext_cursor_readout1, 1)
-        row1.addStretch()
+        self.ext_cursor_readout1.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.ext_cursor_readout1.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        row1.addWidget(self.ext_cursor_readout1, 1, 2, 1, 5)
 
         # Graph 1 plot
         self.ext_plot_widget1 = pg.PlotWidget()
         self.ext_curve1 = self.ext_plot_widget1.plot(pen='y')
         self.ext_cursor1 = self.setup_cursor(self.ext_plot_widget1, self.ext_curve1)
+        self.ext_resonance_markers1 = self.setup_resonance_markers(self.ext_plot_widget1)
         # =========================================================
         # Graph 2 controls
         # =========================================================
@@ -656,36 +668,38 @@ class BaseDAQPage(QWidget):
         self.ext_x_selector2 = QComboBox()
         self.ext_x_selector2.addItems(["Sample Index", "Frequency (Hz)"])
 
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Graph 2 Y:"))
-        row2.addWidget(self.ext_y_selector2)
-        row2.addSpacing(20)
-        row2.addWidget(QLabel("X:"))
-        row2.addWidget(self.ext_x_selector2)
+        row2 = QGridLayout()
+        row2.setHorizontalSpacing(20)
+        row2.setVerticalSpacing(6)
+        row2.addWidget(QLabel("Graph 2 Y:"), 0, 0)
+        row2.addWidget(self.ext_y_selector2, 0, 1)
+        row2.addWidget(QLabel("X:"), 0, 2)
+        row2.addWidget(self.ext_x_selector2, 0, 3)
         self.ext_cursor_checkbox2 = QCheckBox("Cursors")
         self.ext_cursor_checkbox2.setObjectName("CursorToggle")
         self.ext_cursor_checkbox2.setChecked(False)
         self.ext_cursor_mode2 = QComboBox()
         self.ext_cursor_mode2.addItems(["Vertical", "Horizontal", "Track"])
-        row2.addSpacing(20)
-        row2.addWidget(self.ext_cursor_checkbox2)
-        row2.addWidget(self.ext_cursor_mode2)
+        row2.addWidget(self.ext_cursor_checkbox2, 1, 0)
+        row2.addWidget(self.ext_cursor_mode2, 1, 1)
+        row2.setColumnStretch(4, 1)
         self.ext_cursor_readout2 = QLabel()
-        self.ext_cursor_readout2.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row2.addWidget(self.ext_cursor_readout2, 1)
-        row2.addStretch()
+        self.ext_cursor_readout2.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.ext_cursor_readout2.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        row2.addWidget(self.ext_cursor_readout2, 1, 2, 1, 3)
 
         # Graph 2 plot
         self.ext_plot_widget2 = pg.PlotWidget()
         self.ext_curve2 = self.ext_plot_widget2.plot(pen='r')
         self.ext_cursor2 = self.setup_cursor(self.ext_plot_widget2, self.ext_curve2)
+        self.ext_resonance_markers2 = self.setup_resonance_markers(self.ext_plot_widget2)
         # Optional: make combo boxes a bit cleaner
         self.ext_y_selector1.setFixedWidth(140)
         self.ext_x_selector1.setFixedWidth(140)
         self.ext_y_selector2.setFixedWidth(140)
         self.ext_x_selector2.setFixedWidth(140)
-        self.ext_cursor_mode1.setFixedWidth(120)
-        self.ext_cursor_mode2.setFixedWidth(120)
+        self.ext_cursor_mode1.setFixedWidth(140)
+        self.ext_cursor_mode2.setFixedWidth(140)
 
         # Link x axis
         self.ext_plot_widget2.setXLink(self.ext_plot_widget1)
@@ -727,6 +741,8 @@ class BaseDAQPage(QWidget):
         self.update_plot_labels()
         self.attach_cursor_controls(self.ext_cursor1, self.ext_cursor_checkbox1, self.ext_cursor_mode1, self.ext_cursor_readout1)
         self.attach_cursor_controls(self.ext_cursor2, self.ext_cursor_checkbox2, self.ext_cursor_mode2, self.ext_cursor_readout2)
+        self.ext_show_resonance_checkbox.toggled.connect(lambda _: self.update_resonance_display())
+        self.ext_export_sweep_button.clicked.connect(self.export_current_plot_data)
 
 # =========================
 # 4. Cursor control
@@ -735,7 +751,7 @@ class BaseDAQPage(QWidget):
         pen = pg.mkPen(color=(255, 80, 160), width=1.7, style=Qt.PenStyle.DashLine)
         line = pg.InfiniteLine(angle=90, movable=False, pen=pen)
         marker = pg.ScatterPlotItem(size=12, brush=pg.mkBrush(255, 80, 160), pen=pen)
-        label = pg.TextItem(anchor=(0, 1), color=(255, 180, 220))
+        label = pg.TextItem(anchor=(0, 0), color=(255, 180, 220))
 
         plot_widget.addItem(line, ignoreBounds=True)
         plot_widget.addItem(marker, ignoreBounds=True)
@@ -760,6 +776,18 @@ class BaseDAQPage(QWidget):
         marker_dict["line"].setVisible(visible)
         marker_dict["marker"].setVisible(visible)
         marker_dict["label"].setVisible(visible)
+
+    def resonance_label_y_position(self, plot_widget, y_value):
+        try:
+            y_min, y_max = plot_widget.getViewBox().viewRange()[1]
+        except Exception:
+            return y_value
+
+        span = y_max - y_min
+        if not np.isfinite(span) or span <= 0:
+            return y_value
+
+        return max(y_min + 0.03 * span, y_value - 0.08 * span)
 
     def setup_cursor(self, plot_widget, curve):
         cursor_a_pen = pg.mkPen(color=(0, 255, 120), width=1.5)
@@ -1337,9 +1365,6 @@ class BaseDAQPage(QWidget):
             self.stop_freq.setText(self.DEFAULT_STOP_FREQ)
         if hasattr(self, "step_freq"):
             self.step_freq.setText(self.DEFAULT_STEP_FREQ)
-        if hasattr(self, "auto_ref_freq_checkbox"):
-            self.set_checkbox_silently(self.auto_ref_freq_checkbox, False)
-
         if hasattr(self, "gain_slider"):
             self.gain_slider.blockSignals(True)
             self.gain_slider.setValue(0)
@@ -1879,8 +1904,7 @@ class BaseDAQPage(QWidget):
             self.start_dac.setEnabled(False)
             self.stop_dac.setEnabled(False)
             self.constant_freq.setEnabled(False)
-            self.external_ref_freq.setEnabled(not self.auto_ref_freq_checkbox.isChecked())
-            self.auto_ref_freq_checkbox.setEnabled(True)
+            self.external_ref_freq.setEnabled(False)
             self.start_freq.setEnabled(False)
             self.stop_freq.setEnabled(False)
             self.step_freq.setEnabled(False)
@@ -1895,7 +1919,6 @@ class BaseDAQPage(QWidget):
             self.stop_dac.setEnabled(True)
             self.constant_freq.setEnabled(not sweep_mode)
             self.external_ref_freq.setEnabled(False)
-            self.auto_ref_freq_checkbox.setEnabled(False)
             self.start_freq.setEnabled(sweep_mode)
             self.stop_freq.setEnabled(sweep_mode)
             self.step_freq.setEnabled(sweep_mode)
@@ -1908,7 +1931,6 @@ class BaseDAQPage(QWidget):
             self.stop_dac.setEnabled(True)
             self.constant_freq.setEnabled(not sweep_mode)
             self.external_ref_freq.setEnabled(False)
-            self.auto_ref_freq_checkbox.setEnabled(False)
             self.start_freq.setEnabled(sweep_mode)
             self.stop_freq.setEnabled(sweep_mode)
             self.step_freq.setEnabled(sweep_mode)
@@ -1953,7 +1975,10 @@ class BaseDAQPage(QWidget):
                 "cursor2": self.cursor2,
             }
     def update_sweep_only_y_option(self, y_box, fallback):
-        sweep_mode = self.current_output_mode() == "Frequency Sweep"
+        sweep_mode = (
+            self.current_output_mode() == "Frequency Sweep"
+            or self.current_actuator() == "Function Generator"
+        )
         model = y_box.model()
 
         for i in range(y_box.count()):
@@ -1984,6 +2009,10 @@ class BaseDAQPage(QWidget):
             else:
                 model.item(i).setEnabled(True)
 
+    def apply_raw_adc_y_range(self, plot_widget):
+        plot_widget.enableAutoRange(axis='y', enable=False)
+        plot_widget.setYRange(0.0, 3.3, padding=0)
+
     # Update axis options based on measurement method (e.g. disable Frequency x-axis for raw ADC)
     def update_axis_constraints(self):
         if not all(hasattr(self, attr) for attr in (
@@ -2002,6 +2031,15 @@ class BaseDAQPage(QWidget):
         for y_box, x_box, fallback in axis_groups:
             self.update_sweep_only_y_option(y_box, fallback)
             self.apply_x_axis_constraints(y_box, x_box)
+
+        raw_plot_groups = (
+            (self.ext_y_selector1, self.ext_plot_widget1),
+            (self.ext_y_selector2, self.ext_plot_widget2),
+        )
+        for y_box, plot_widget in raw_plot_groups:
+            if y_box.currentText() in ("Raw ADC1 (V)", "Raw ADC2 (V)"):
+                self.apply_raw_adc_y_range(plot_widget)
+
     def update_plot_labels(self):
         w = self.get_active_plot_widgets()
 
@@ -2068,6 +2106,74 @@ class BaseDAQPage(QWidget):
             self.sweep_adc1_rms.append(adc1_rms)
             self.sweep_adc2_rms.append(adc2_rms)
             self.last_freq = f_ref
+
+    def next_export_path(self):
+        data_dir = Path(__file__).resolve().parents[1] / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        date_text = datetime.now().strftime("%d_%m_%Y")
+        index = 1
+        while True:
+            path = data_dir / f"capstone_{index}_{date_text}.csv"
+            if not path.exists():
+                return path
+            index += 1
+
+    def selected_export_axes_are_frequency_data(self):
+        w = self.get_active_plot_widgets()
+        selections = (
+            (w["x1"].currentText(), w["y1"].currentText()),
+            (w["x2"].currentText(), w["y2"].currentText()),
+        )
+
+        for x_axis, y_axis in selections:
+            if x_axis == "Sample Index" or y_axis in ("Raw ADC1 (V)", "Raw ADC2 (V)"):
+                return False
+        return True
+
+    def export_current_plot_data(self):
+        if not self.selected_export_axes_are_frequency_data():
+            QMessageBox.warning(
+                self,
+                "Export Unavailable",
+                "CSV export is only available for frequency-domain data, not raw ADC sample data.",
+            )
+            return
+
+        rows = zip(
+            self.sweep_freqs,
+            self.sweep_adc1_rms,
+            self.sweep_adc2_rms,
+            self.sweep_amp,
+            self.sweep_phase,
+        )
+        data = np.array(list(rows), dtype=float)
+        if data.size == 0:
+            QMessageBox.warning(self, "Export Unavailable", "No frequency-domain data has been collected yet.")
+            return
+
+        valid = np.all(np.isfinite(data), axis=1)
+        data = data[valid]
+        if len(data) == 0:
+            QMessageBox.warning(self, "Export Unavailable", "No valid frequency-domain data is available to export.")
+            return
+
+        data = data[np.argsort(data[:, 0])]
+        export_path = self.next_export_path()
+        headers = [
+            "frequency_hz",
+            "adc1_rms_v",
+            "adc2_rms_v",
+            "amplitude_db",
+            "phase_deg",
+        ]
+
+        with export_path.open("w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(headers)
+            writer.writerows(data.tolist())
+
+        QMessageBox.information(self, "Export Complete", f"Saved CSV data to:\n{export_path}")
 
     def build_resonance_peak(self, freqs, amps, phases, peak_index):
         measured_freq = float(freqs[peak_index])
@@ -2174,18 +2280,30 @@ class BaseDAQPage(QWidget):
         peaks = self.estimate_resonance_peaks(freqs, amps, phases, max_peaks=1)
         return peaks[0] if peaks else None
 
+    def get_active_resonance_controls(self):
+        if self.current_actuator() == "Function Generator":
+            return (
+                self.ext_show_resonance_checkbox,
+                [self.ext_resonance_markers1, self.ext_resonance_markers2],
+            )
+
+        return (
+            self.show_resonance_checkbox,
+            [self.resonance_markers1, self.resonance_markers2],
+        )
+
     def update_resonance_display(self, freqs=None, amps=None, phases=None):
         if not hasattr(self, "show_resonance_checkbox"):
             return
 
-        enabled = self.show_resonance_checkbox.isChecked()
-        marker_groups = [self.resonance_markers1, self.resonance_markers2]
+        resonance_checkbox, marker_groups = self.get_active_resonance_controls()
+        enabled = resonance_checkbox.isChecked()
 
         if not enabled:
             for markers in marker_groups:
                 for marker in markers:
                     self.set_resonance_marker_visible(marker, False)
-            self.resonance_readout.setText("Resonance: --")
+            self.resonance_readout.setText("")
             return
 
         if freqs is None:
@@ -2200,18 +2318,10 @@ class BaseDAQPage(QWidget):
             for markers in marker_groups:
                 for marker in markers:
                     self.set_resonance_marker_visible(marker, False)
-            self.resonance_readout.setText("Resonance: collecting data...")
+            self.resonance_readout.setText("")
             return
 
-        peak_text = ", ".join(
-            f"R{i + 1}: {peak['freq_int']} Hz"
-            for i, peak in enumerate(peaks)
-        )
-        strongest = self.resonance_peak
-        self.resonance_readout.setText(
-            f"Resonances: {peak_text} | strongest {strongest['freq_int']} Hz, "
-            f"{strongest['amp']:.2f} dB"
-        )
+        self.resonance_readout.setText("")
 
         w = self.get_active_plot_widgets()
         plot_settings = (
@@ -2238,7 +2348,10 @@ class BaseDAQPage(QWidget):
                 marker["line"].setPos(peak["freq"])
                 marker["marker"].setData([peak["freq"]], [y_value])
                 marker["label"].setText(f"R{i + 1} {peak['freq_int']} Hz")
-                marker["label"].setPos(peak["freq"], y_value)
+                marker["label"].setPos(
+                    peak["freq"],
+                    self.resonance_label_y_position(marker["plot_widget"], y_value)
+                )
                 self.set_resonance_marker_visible(marker, True)
 
     def estimate_signal_frequency(self, signal, fs):
@@ -2291,13 +2404,10 @@ class BaseDAQPage(QWidget):
 
         fs = float(self.sampling_rate_input.text())
         if self.current_actuator() == "Function Generator":
-            if self.auto_ref_freq_checkbox.isChecked():
-                detected_freq = self.estimate_signal_frequency(adc1, fs)
-                if detected_freq is not None:
-                    self.external_ref_freq.setText(f"{detected_freq:.2f}")
-                    f_ref = detected_freq
-                else:
-                    f_ref = float(self.external_ref_freq.text())
+            detected_freq = self.estimate_signal_frequency(adc1, fs)
+            if detected_freq is not None:
+                self.external_ref_freq.setText(f"{detected_freq:.2f}")
+                f_ref = detected_freq
             else:
                 f_ref = float(self.external_ref_freq.text())
         elif self.sweeping:
