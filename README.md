@@ -164,8 +164,9 @@ The GUI is a Python application in `Py_GUI/`.
 ### Optional
 
 - A virtual environment, recommended so the GUI dependencies do not interfere with other Python projects.
+- Inno Setup 6, only needed if you want to build the Windows installer.
 
-## Set Up the GUI
+## Run the GUI from Python Source
 
 From the repository root:
 
@@ -174,7 +175,7 @@ cd Py_GUI
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install PyQt6 pyqtgraph numpy scipy pyserial
+python -m pip install -r requirements.txt
 ```
 
 Run the GUI:
@@ -182,6 +183,58 @@ Run the GUI:
 ```powershell
 python main.py
 ```
+
+If PowerShell blocks virtual environment activation, run this once in the same terminal:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+When exporting sweep data from the GUI, the app opens a normal Windows Save CSV dialog. The default save location is the user's Downloads folder.
+
+## Run the GUI on Windows from the Installer
+
+For a user who does not want to install Python, use the Windows installer build.
+
+Build the app and installer from `Py_GUI/`:
+
+```powershell
+cd Py_GUI
+.\build_exe.ps1
+.\build_installer.ps1
+```
+
+The installer is created here:
+
+```text
+Py_GUI\installer_output\SPR25_MEMS_TESTBENCH_Setup.exe
+```
+
+Send this single setup file to the Windows user. After they run it, the installer creates a desktop shortcut named:
+
+```text
+SPR25 MEMS TESTBENCH
+```
+
+If Microsoft Teams blocks `.exe` files, zip only the setup file and send the zip:
+
+```text
+SPR25_MEMS_TESTBENCH_Setup.zip
+```
+
+The user should unzip it, run `SPR25_MEMS_TESTBENCH_Setup.exe`, keep `Create a desktop shortcut` checked, and launch the app from the desktop shortcut.
+
+If Windows SmartScreen appears, choose `More info` then `Run anyway`.
+
+## Download the Windows Installer
+
+If a shared download link is available, place it here:
+
+```text
+SPR25_MEMS_TESTBENCH_Setup.exe download link: TODO
+```
+
+Keep the installer link updated whenever the GUI is changed and rebuilt.
 
 ## GUI Communication Notes
 
@@ -198,6 +251,7 @@ For USB serial:
 2. Connect the board by USB.
 3. Check Windows Device Manager for the COM port.
 4. Make sure no other program is using the same COM port.
+5. If the COM port does not appear, install the ST-LINK USB driver. STM32CubeProgrammer is only needed if the user needs to flash firmware.
 
 For UDP:
 
@@ -231,8 +285,9 @@ Firmware:
 
 GUI:
 
-- Install Python.
+- For source mode, install Python.
 - Create and activate a virtual environment in `Py_GUI/`.
-- Install `PyQt6 pyqtgraph numpy scipy pyserial`.
+- Install dependencies with `python -m pip install -r requirements.txt`.
 - Run `python main.py`.
+- For normal Windows users, build and share `Py_GUI\installer_output\SPR25_MEMS_TESTBENCH_Setup.exe`.
 
