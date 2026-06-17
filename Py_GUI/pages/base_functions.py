@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (
     QFormLayout, QLineEdit, QSizePolicy, QSpacerItem, QWidget, QVBoxLayout, QTabWidget,
     QLabel, QPushButton, QComboBox, QApplication,
-    QGroupBox, QGridLayout, QHBoxLayout, QCheckBox, QMessageBox, QStackedWidget, QToolButton, QMenu, QSlider
+    QGroupBox, QGridLayout, QHBoxLayout, QCheckBox, QMessageBox, QStackedWidget, QToolButton, QMenu, QSlider,
+    QFileDialog
 )
 from PyQt6.QtCore import Qt, QSize, QRectF
 from PyQt6.QtGui import QIntValidator, QAction, QColor, QPainter, QPen
@@ -2326,16 +2327,24 @@ class BaseDAQPage(QWidget):
             self.last_freq = f_ref
 
     def next_export_path(self):
-        data_dir = Path(__file__).resolve().parents[1] / "data"
-        data_dir.mkdir(exist_ok=True)
-
+        downloads_dir = Path.home() / "Downloads"
+        default_dir = downloads_dir if downloads_dir.exists() else Path.home()
         date_text = datetime.now().strftime("%d_%m_%Y")
-        index = 1
-        while True:
-            path = data_dir / f"capstone_{index}_{date_text}.csv"
-            if not path.exists():
-                return path
-            index += 1
+        default_path = default_dir / f"capstone_{date_text}.csv"
+        selected_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save CSV Data",
+            str(default_path),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+
+        if not selected_path:
+            return None
+
+        export_path = Path(selected_path)
+        if export_path.suffix.lower() != ".csv":
+            export_path = export_path.with_suffix(".csv")
+        return export_path
 
     def selected_export_axes_are_frequency_data(self):
         w = self.get_active_plot_widgets()
@@ -2378,6 +2387,9 @@ class BaseDAQPage(QWidget):
 
         data = data[np.argsort(data[:, 0])]
         export_path = self.next_export_path()
+        if export_path is None:
+            return
+
         headers = [
             "frequency_hz",
             "adc1_rms_v",

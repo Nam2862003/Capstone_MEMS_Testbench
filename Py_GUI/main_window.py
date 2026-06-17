@@ -2,6 +2,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QStackedWidget,
     QPushButton, QHBoxLayout
 )
+from PyQt6.QtGui import QIcon
+from pathlib import Path
+import sys
 
 from pages.select_page import SelectPage
 from pages.pr_page import PRPage
@@ -13,13 +16,18 @@ from network.usb_receiver import USBReceiver
 from network.udp_sender import UDPSender
 from network.usb_sender import USBSender
 
+def resource_path(relative_path):
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / relative_path
+
 class PCB_GUI(QWidget):
 
     def __init__(self):
 
         super().__init__()
 
-        self.setWindowTitle("MEMS Data Acquisition")
+        self.setWindowTitle("SPR25_MEMS_TESTBENCH")
+        self.setWindowIcon(QIcon(str(resource_path("assets/app_icon.ico"))))
         self.setMinimumSize(900, 650)
         self.resize(1280, 760)
         self.setStyleSheet(STYLE)
