@@ -73,7 +73,7 @@ class CommandSenderMixin:
         return True
 
     def sync_output_mode(self):
-        return self.send(f"OUTPUT,{getattr(self, 'output_mode', 'ADC')}")
+        return self.send(f"OUTPUT,{getattr(self, 'output_mode', 'BNC')}")
 
     def set_pe_gain(self, gain_index, send_now=True):
         index = int(gain_index)
@@ -94,6 +94,6 @@ class CommandSenderMixin:
         ok = self.stop_gen() and ok
         ok = self.set_board_mode("IDLE") and ok
         ok = self.set_actuator_mode("STM32") and ok
-        ok = self.set_output_mode("ADC") and ok
+        ok = self.set_output_mode("BNC") and ok
         ok = self.set_pe_gain(0) and ok
         return ok

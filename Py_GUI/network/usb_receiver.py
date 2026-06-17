@@ -81,8 +81,8 @@ class USBReceiver:
             return
 
         self.ser = serial.Serial(self.port, self.baudrate, timeout=0.05, write_timeout=1.0)
-        with self.io_lock:
-            self.ser.reset_input_buffer()
+        with self.rx_lock:
+            self._rx.clear()
         self.connected = True
         self.last_error = ""
         print(f"[USB] Listening on {self.port}")
@@ -230,9 +230,6 @@ class USBReceiver:
     def clear_pending_bytes(self):
         with self.rx_lock:
             self._rx.clear()
-        with self.io_lock:
-            if self.ser is not None and self.ser.is_open:
-                self.ser.reset_input_buffer()
 
     def _store_payload(self, payload):
         samples = np.frombuffer(payload, dtype="<u4")

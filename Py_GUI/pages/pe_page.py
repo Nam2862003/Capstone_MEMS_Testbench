@@ -5,6 +5,7 @@ from pages.base_functions import BaseDAQPage
 
 
 class PEPage(BaseDAQPage):
+    BOARD_MODE = "PE"
     GAIN_OPTIONS = [
         ("1x gain", "00"),
         ("7.5x gain", "01"),

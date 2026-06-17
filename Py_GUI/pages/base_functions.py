@@ -9,6 +9,7 @@ from PyQt6.QtGui import QIntValidator, QAction, QColor, QPainter, QPen
 import csv
 from datetime import datetime
 from pathlib import Path
+import threading
 import time
 
 import pyqtgraph as pg
@@ -48,6 +49,7 @@ class IosToggleSwitch(QCheckBox):
 
 
 class BaseDAQPage(QWidget):
+    BOARD_MODE = "IDLE"
     ALL_ADC_RESOLUTIONS = ["10-bit", "12-bit", "14-bit", "16-bit"]
     H7S_ADC_RESOLUTIONS = ["10-bit", "12-bit"]
     DEFAULT_SAMPLING_RATE = "2500000"
@@ -101,12 +103,15 @@ class BaseDAQPage(QWidget):
         self.resonance_peaks = []
         self.selected_actuator = self.DEFAULT_ACTUATOR
         self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
-        self.output_selection_mode = "ADC"
+        self.output_selection_mode = "BNC"
         self.time_offset_1 = 0
         self.time_offset_2 = 0
         self.adc_running = False
         self.external_freq_tolerance_hz = 50.0
         self.detected_board = None
+        self.usb_connect_in_progress = False
+        self.usb_connect_result = None
+        self.usb_connect_error = None
 
         self.build_setup_tab()
         self.build_sweep_tab()
@@ -272,7 +277,7 @@ class BaseDAQPage(QWidget):
         self.output_selection_switch.setObjectName("OutputSelectionSwitch")
         self.output_selection_switch.setChecked(False)
         self.output_selection_switch.toggled.connect(self.on_output_selection_toggled)
-        self.output_selection_text = QLabel("ADC")
+        self.output_selection_text = QLabel("BNC")
         self.output_selection_text.setObjectName("OutputSelectionText")
         self.output_selection_text.setFixedWidth(34)
         self.output_selection_spacer = QWidget()
@@ -353,9 +358,6 @@ class BaseDAQPage(QWidget):
         self.detected_board_label.setReadOnly(True)
         self.detected_board_label.setFixedWidth(compact_field_width)
         board_row.addWidget(self.detected_board_label, 0, Qt.AlignmentFlag.AlignLeft)
-        self.detect_board_btn = QPushButton("Detect Board")
-        self.detect_board_btn.setFixedWidth(compact_button_width)
-        board_row.addWidget(self.detect_board_btn, 0, Qt.AlignmentFlag.AlignLeft)
         board_row.addStretch()
         top_comm_form.addRow(make_comm_label("Board:"), board_row)
         comm_layout.addLayout(top_comm_form)
@@ -523,7 +525,6 @@ class BaseDAQPage(QWidget):
         self.usb_connect_btn.clicked.connect(self.connect_transport)
         self.usb_disconnect_btn.clicked.connect(self.disconnect_transport)
         self.transport_selector.currentIndexChanged.connect(self.update_transport_panel)
-        self.detect_board_btn.clicked.connect(lambda: self.detect_board())
         self.usb_refresh_ports_btn.clicked.connect(self.refresh_usb_ports)
         #Reset sweep data when frequency changes
         # self.dac_freq_input.editingFinished.connect(self.on_freq_changed)
@@ -1346,9 +1347,13 @@ class BaseDAQPage(QWidget):
                     self.tabs.setCurrentIndex(0)
 
     def sync_board_transport_mode(self):
-        if not hasattr(self, "sender") or not self.active_transport_is_connected():
+        if not hasattr(self, "sender"):
             return
-        self.sender.sync_board_mode()
+        mode = getattr(self, "BOARD_MODE", "IDLE")
+        for sender in (self.udp_sender, self.usb_sender):
+            if sender is not None:
+                send_now = sender is self.sender and self.active_transport_is_connected()
+                sender.set_board_mode(mode, send_now=send_now)
 
     def set_combo_text_silently(self, combo, text):
         combo.blockSignals(True)
@@ -1362,9 +1367,9 @@ class BaseDAQPage(QWidget):
 
     def set_output_selection_silently(self, mode):
         normalized = str(mode).strip().upper()
-        checked = normalized == "BNC"
+        checked = normalized == "ADC"
 
-        self.output_selection_mode = "BNC" if checked else "ADC"
+        self.output_selection_mode = "ADC" if checked else "BNC"
         if hasattr(self, "output_selection_switch"):
             self.output_selection_switch.blockSignals(True)
             self.output_selection_switch.setChecked(checked)
@@ -1373,7 +1378,7 @@ class BaseDAQPage(QWidget):
             self.output_selection_text.setText(self.output_selection_mode)
 
     def on_output_selection_toggled(self, checked):
-        self.output_selection_mode = "BNC" if checked else "ADC"
+        self.output_selection_mode = "ADC" if checked else "BNC"
         if hasattr(self, "output_selection_text"):
             self.output_selection_text.setText(self.output_selection_mode)
         self.sync_output_selection_transport_mode()
@@ -1382,11 +1387,20 @@ class BaseDAQPage(QWidget):
         if not hasattr(self, "sender"):
             return
 
-        mode = getattr(self, "output_selection_mode", "ADC")
+        mode = getattr(self, "output_selection_mode", "BNC")
         for sender in (self.udp_sender, self.usb_sender):
             if sender is not None and hasattr(sender, "set_output_mode"):
                 send_now = sender is self.sender and self.active_transport_is_connected()
                 sender.set_output_mode(mode, send_now=send_now)
+
+    def close_unverified_transport(self):
+        if hasattr(self, "sender"):
+            self.sender.close()
+        if hasattr(self, "receiver"):
+            self.receiver.stop()
+        self.connected_transport = None
+        self.set_signal_controls_enabled(False)
+        self.update_comm_status()
 
     def reset_transport_stats(self):
         for endpoint in (self.udp_sender, self.usb_sender, self.udp_receiver, self.usb_receiver):
@@ -1408,7 +1422,7 @@ class BaseDAQPage(QWidget):
 
         self.selected_actuator = self.DEFAULT_ACTUATOR
         self.selected_output_mode = self.DEFAULT_OUTPUT_MODE
-        self.set_output_selection_silently("ADC")
+        self.set_output_selection_silently("BNC")
         self._refresh_actuator_menu_state()
 
         if hasattr(self, "sampling_rate_input"):
@@ -1461,7 +1475,7 @@ class BaseDAQPage(QWidget):
                 sender.set_board_mode("IDLE", send_now=False)
                 sender.set_actuator_mode("STM32", send_now=False)
                 if hasattr(sender, "set_output_mode"):
-                    sender.set_output_mode("ADC", send_now=False)
+                    sender.set_output_mode("BNC", send_now=False)
                 if hasattr(sender, "set_pe_gain"):
                     sender.set_pe_gain(0, send_now=False)
 
@@ -1549,12 +1563,48 @@ class BaseDAQPage(QWidget):
             self.set_hs_usb_enabled(True)
             self.set_resolution_choices(self.ALL_ADC_RESOLUTIONS, "16-bit")
 
+    def clear_board_reply_buffers(self):
+        if hasattr(self.receiver, "clear_text_messages"):
+            self.receiver.clear_text_messages()
+        if hasattr(self.receiver, "clear_pending_bytes"):
+            self.receiver.clear_pending_bytes()
+        elif hasattr(self.receiver, "_rx"):
+            self.receiver._rx.clear()
+
+    def request_board_name(self, timeout=2.0):
+        self.detected_board_label.setText("Detecting...")
+        QApplication.processEvents()
+
+        self.clear_board_reply_buffers()
+
+        if not self.sender.send("BOARD?"):
+            self.detected_board = None
+            self.set_hs_usb_enabled(True)
+            self.detected_board_label.setText("No device detected yet")
+            return False
+
+        deadline = time.time() + timeout
+        reply = None
+        while time.time() < deadline:
+            QApplication.processEvents()
+            if hasattr(self.receiver, "get_text_message"):
+                reply = self.receiver.get_text_message()
+            if reply:
+                break
+            time.sleep(0.03)
+
+        if reply:
+            self.apply_board_detection(reply)
+            return True
+
+        self.detected_board = None
+        self.set_hs_usb_enabled(True)
+        self.detected_board_label.setText("No reply to BOARD? Check IP, ports, and flashed firmware.")
+        return False
+
     def detect_board(self):
         if not hasattr(self, "sender") or not hasattr(self, "receiver"):
             return
-
-        self.detected_board_label.setText("Detecting...")
-        QApplication.processEvents()
 
         if self.transport_selector.currentText() == "Ethernet (UDP)":
             try:
@@ -1604,38 +1654,7 @@ class BaseDAQPage(QWidget):
                 self.detected_board_label.setText(f"USB detect error: {exc}")
                 return
 
-        if hasattr(self.receiver, "clear_text_messages"):
-            self.receiver.clear_text_messages()
-        if hasattr(self.receiver, "clear_pending_bytes"):
-            self.receiver.clear_pending_bytes()
-        elif hasattr(self.receiver, "_rx"):
-            self.receiver._rx.clear()
-
-        if not self.sender.send("BOARD?"):
-            self.detected_board = None
-            self.set_hs_usb_enabled(True)
-            self.detected_board_label.setText("No device detected yet")
-            if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
-                if not self.adc_running and self.sender.start_aq():
-                    self.adc_running = True
-            return
-
-        deadline = time.time() + 2.0
-        reply = None
-        while time.time() < deadline:
-            QApplication.processEvents()
-            if hasattr(self.receiver, "get_text_message"):
-                reply = self.receiver.get_text_message()
-            if reply:
-                break
-            time.sleep(0.03)
-
-        if reply:
-            self.apply_board_detection(reply)
-        else:
-            self.detected_board = None
-            self.set_hs_usb_enabled(True)
-            self.detected_board_label.setText("No reply to BOARD? Check IP, ports, and flashed firmware.")
+        self.request_board_name()
 
         if self.transport_selector.currentText() == "HS USB" and 'was_running' in locals() and was_running:
             if not self.adc_running and self.sender.start_aq():
@@ -1731,6 +1750,121 @@ class BaseDAQPage(QWidget):
                 send_now = sender is self.sender and self.active_transport_is_connected()
                 sender.set_actuator_mode(mode, send_now=send_now)
 
+    def begin_usb_connect(self, usb_port, baudrate_value):
+        self.receiver = self.get_parent_receiver("usb")
+        self.sender = self.get_parent_sender("usb")
+        self.detected_board_label.setText("Opening USB...")
+        self.usb_status_label.setText(f"Connecting to {usb_port}...")
+        self.usb_connect_in_progress = True
+        self.usb_connect_result = None
+        self.usb_connect_error = None
+        self.usb_connect_btn.setEnabled(False)
+        self.usb_disconnect_btn.setEnabled(False)
+
+        args = (
+            self.receiver,
+            self.sender,
+            usb_port,
+            baudrate_value,
+            int(self.buffer.text()),
+            getattr(self, "BOARD_MODE", "IDLE"),
+            self.current_actuator_transport_mode(),
+            getattr(self, "output_selection_mode", "BNC"),
+            self.gain_slider.value() if hasattr(self, "gain_slider") else getattr(self.sender, "pe_gain_index", 0),
+        )
+        threading.Thread(target=self.usb_connect_worker, args=args, daemon=True).start()
+
+    def usb_worker_request_board_name(self, receiver, sender, timeout=0.75):
+        if hasattr(receiver, "clear_text_messages"):
+            receiver.clear_text_messages()
+        if hasattr(receiver, "clear_pending_bytes"):
+            receiver.clear_pending_bytes()
+
+        if not sender.send("BOARD?"):
+            return None
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            reply = receiver.get_text_message() if hasattr(receiver, "get_text_message") else None
+            if reply:
+                return reply
+            time.sleep(0.03)
+        return None
+
+    def usb_connect_worker(self, receiver, sender, usb_port, baudrate_value, buffer_size, board_mode, actuator_mode, output_mode, pe_gain_index):
+        try:
+            if hasattr(sender, "attach_receiver"):
+                sender.attach_receiver(None)
+            if hasattr(sender, "configure"):
+                sender.configure(port=usb_port, baudrate=baudrate_value)
+            sender.open()
+            sender.stop_aq()
+            sender.close()
+
+            if hasattr(sender, "attach_receiver"):
+                sender.attach_receiver(receiver)
+            if hasattr(sender, "configure"):
+                sender.configure(port=usb_port, baudrate=baudrate_value)
+            if (receiver.port != usb_port) or (int(receiver.baudrate) != baudrate_value):
+                receiver.rebind(usb_port, baudrate=baudrate_value)
+            receiver.set_buffer_size(buffer_size)
+            receiver.start()
+            sender.open()
+
+            board_reply = self.usb_worker_request_board_name(receiver, sender)
+            sender.set_board_mode(board_mode, send_now=True)
+            sender.set_actuator_mode(actuator_mode, send_now=True)
+            if hasattr(sender, "set_output_mode"):
+                sender.set_output_mode(output_mode, send_now=True)
+            if hasattr(sender, "set_pe_gain"):
+                sender.set_pe_gain(pe_gain_index, send_now=True)
+
+            adc_started = sender.start_aq()
+            self.usb_connect_result = {
+                "board_reply": board_reply,
+                "adc_started": adc_started,
+            }
+        except Exception as exc:
+            try:
+                sender.close()
+                receiver.stop()
+            except Exception:
+                pass
+            self.usb_connect_error = str(exc)
+
+    def finish_usb_connect_if_ready(self):
+        if not self.usb_connect_in_progress:
+            return False
+
+        if self.usb_connect_error is None and self.usb_connect_result is None:
+            return True
+
+        self.usb_connect_in_progress = False
+        self.usb_connect_btn.setEnabled(True)
+        self.usb_disconnect_btn.setEnabled(True)
+
+        if self.usb_connect_error is not None:
+            self.connected_transport = None
+            self.adc_running = False
+            self.set_signal_controls_enabled(False)
+            self.detected_board_label.setText("No device detected yet")
+            self.usb_status_label.setText("Not connected")
+            QMessageBox.warning(self, "USB Connection Error", self.usb_connect_error)
+            return True
+
+        board_reply = self.usb_connect_result.get("board_reply")
+        if board_reply:
+            self.apply_board_detection(board_reply)
+        else:
+            self.detected_board = None
+            self.set_hs_usb_enabled(True)
+            self.detected_board_label.setText("USB connected; no BOARD? reply")
+
+        self.adc_running = bool(self.usb_connect_result.get("adc_started"))
+        self.connected_transport = "usb"
+        self.set_signal_controls_enabled(True)
+        return False
+
     def connect_transport(self):
         transport_mode = self.transport_selector.currentText()
 
@@ -1749,13 +1883,17 @@ class BaseDAQPage(QWidget):
                 self.sender.configure(ip=board_ip, port=cmd_port)
                 self.receiver.rebind(data_port, host=local_ip)
                 self.sender.open()
+                self.receiver.start()
+                if not self.request_board_name():
+                    self.close_unverified_transport()
+                    return
+                self.sync_board_transport_mode()
                 self.sender.sync_board_mode()
                 self.sender.sync_actuator_mode()
                 if hasattr(self.sender, "sync_output_mode"):
                     self.sender.sync_output_mode()
                 if hasattr(self.sender, "sync_pe_gain"):
                     self.sender.sync_pe_gain()
-                self.receiver.start()
                 self.adc_running = False
                 if self.sender.start_aq():
                     self.adc_running = True
@@ -1775,32 +1913,8 @@ class BaseDAQPage(QWidget):
                     raise ValueError("USB COM port cannot be empty.")
                 if not baudrate:
                     raise ValueError("Baudrate cannot be empty.")
-                
-                # Switch to USB receiver
-                self.receiver = self.get_parent_receiver("usb")
-                self.sender = self.get_parent_sender("usb")
-                if hasattr(self.sender, "attach_receiver"):
-                    self.sender.attach_receiver(self.receiver)
-                if hasattr(self.sender, "configure"):
-                    self.sender.configure(port=usb_port, baudrate=baudrate_value)
-                if (self.receiver.port != usb_port) or (int(self.receiver.baudrate) != baudrate_value):
-                    self.receiver.rebind(usb_port, baudrate=baudrate_value)
-                self.receiver.set_buffer_size(int(self.buffer.text()))
-                self.receiver.start()
-                self.sender.open()
-                self.sender.sync_board_mode()
-                self.sender.sync_actuator_mode()
-                if hasattr(self.sender, "sync_output_mode"):
-                    self.sender.sync_output_mode()
-                if hasattr(self.sender, "sync_pe_gain"):
-                    self.sender.sync_pe_gain()
-                self.adc_running = False
-                if self.sender.start_aq():
-                    self.adc_running = True
-                self.connected_transport = "usb"
-                self.set_signal_controls_enabled(True)
-                self.update_comm_status()
-                QMessageBox.information(self, "USB Connected", f"Connected to {usb_port} at {baudrate} bps")
+
+                self.begin_usb_connect(usb_port, baudrate_value)
             except Exception as exc:
                 QMessageBox.warning(self, "USB Connection Error", str(exc))
 
@@ -1815,6 +1929,9 @@ class BaseDAQPage(QWidget):
 
     def update_comm_status(self):
         if not hasattr(self, "comm_status_label"):
+            return
+
+        if self.finish_usb_connect_if_ready():
             return
 
         if self.connected_transport is None:

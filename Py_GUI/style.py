@@ -170,6 +170,10 @@ QLabel#OutputSelectionText {
     font-weight: 600;
 }
 
+QLabel#OutputSelectionText:disabled {
+    color: #777777;
+}
+
 /* =========================
    TABS (GENERAL)
 ========================= */

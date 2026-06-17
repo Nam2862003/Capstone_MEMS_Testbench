@@ -819,12 +819,12 @@ void set_actuator_mode(uint8_t mode)
     switch (mode)
     {
         case ACTUATOR_MODE_FUNCTION_GENERATOR:
-            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
             // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
             break;
 
         case ACTUATOR_MODE_DDS:
-            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(ACTSRC_GPIO_Port, ACTSRC_Pin, GPIO_PIN_RESET);
             // HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
             break;
 
@@ -842,12 +842,12 @@ void set_output_mode(uint8_t mode)
     if (mode == OUTPUT_MODE_ADC)
     {
         output_mode = OUTPUT_MODE_ADC;
-        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
     }
     else
     {
         output_mode = OUTPUT_MODE_BNC;
-        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
     }
 }
 

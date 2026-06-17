@@ -3,6 +3,7 @@ from pages.base_functions import BaseDAQPage
 
 
 class PRPage(BaseDAQPage):
+    BOARD_MODE = "PR"
 
     def __init__(self, receiver, sender, usb_receiver=None, usb_sender=None):
 

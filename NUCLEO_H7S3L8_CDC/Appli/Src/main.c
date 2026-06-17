@@ -839,12 +839,12 @@ static void SetOutputMode(uint8_t mode)
   if (mode == OUTPUT_MODE_ADC)
   {
     output_mode = OUTPUT_MODE_ADC;
-    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
   }
   else
   {
     output_mode = OUTPUT_MODE_BNC;
-    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(BNC_ADC_GPIO_Port, BNC_ADC_Pin, GPIO_PIN_RESET);
   }
 }
 
